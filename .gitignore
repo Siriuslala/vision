@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# environments
+.venv
+.uv/
+.env
+
+# Local model inference artifacts
+outputs/
+*.log
+
+# Others
+README_for_me.md
+VALIDATION.md

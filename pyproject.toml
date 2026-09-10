@@ -1,0 +1,14 @@
+[project]
+name = "vision"
+version = "0.1.0"
+description = "Offline BabyVision data export and batched Qwen VLM evaluation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.9,<2",
+    "pillow>=11",
+    "pyarrow>=21",
+    "torch>=2.7,<3",
+    "torchvision>=0.22",
+    "transformers>=5.2,<6",
+]
