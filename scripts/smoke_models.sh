@@ -29,7 +29,7 @@ THINKING="off"                 # Qwen3.5: off/on/default; consider an initial bu
 MAX_PIXELS=""                  # An empty string preserves the model processor defaults.
 DTYPE="bfloat16"
 ATTN_IMPLEMENTATION="sdpa"
-SEED=0
+RANDOM_SEED=0                 # Seed for Python, NumPy, and PyTorch (CPU/CUDA).
 RESUME=false                   # Set true to resume the same output; other settings must match.
 DRY_RUN=false                  # true: Validate cases and prompts without loading model weights.
 # ==================================================
@@ -39,7 +39,7 @@ ARGS=(
   --data-root "$DATA_ROOT" --cache-root "$CACHE_ROOT"
   --batchsize "$BATCHSIZE" --gpu_ids "$GPU_IDS"
   --max-new-tokens "$MAX_NEW_TOKENS" --thinking "$THINKING"
-  --dtype "$DTYPE" --attn-implementation "$ATTN_IMPLEMENTATION" --seed "$SEED"
+  --dtype "$DTYPE" --attn-implementation "$ATTN_IMPLEMENTATION" --random-seed "$RANDOM_SEED"
 )
 [[ -z "$MAX_PIXELS" ]] || ARGS+=(--max-pixels "$MAX_PIXELS")
 [[ "$RESUME" == false ]] || ARGS+=(--resume)

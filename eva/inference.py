@@ -42,7 +42,8 @@ def parser(full=False):
     p.add_argument('--thinking', choices=['default', 'on', 'off'], default='off')
     p.add_argument('--dtype', choices=['auto', 'bfloat16', 'float16', 'float32'], default='bfloat16')
     p.add_argument('--attn-implementation', choices=['sdpa', 'eager', 'flash_attention_2'], default='sdpa')
-    p.add_argument('--seed', type=int, default=0)
+    p.add_argument('--seed', '--random-seed', '--random_seed', dest='seed', type=int, default=0,
+                   help='Random seed for Python, NumPy, and PyTorch CPU/CUDA RNGs (default: 0)')
     p.add_argument('--resume', action='store_true', help='Resume only with exactly matching run configuration')
     p.add_argument('--dry-run', action='store_true', help='Validate IDs and write prompts without loading model weights')
     p.add_argument('--gen-text-only', action='store_true', help='Explicitly opt into unscored BabyVision-Gen text diagnostics')
@@ -134,6 +135,7 @@ def main(full=False):
         if gpu != 'cpu' and not torch.cuda.is_available():
             raise RuntimeError('CUDA unavailable. Check GPU access/driver; use --gpu-ids cpu only for deliberate CPU inference.')
         set_seed(args.seed)
+        print(f'Random seed: {args.seed}', flush=True)
         processor = AutoProcessor.from_pretrained(model_path, local_files_only=True)
         processor.tokenizer.padding_side = 'left'
         if args.max_pixels:
