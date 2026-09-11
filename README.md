@@ -128,3 +128,52 @@ The existing local export does not need to be recreated. To export again, config
 `utils/project_paths.py` reads and validates private path configuration. `data/` handles export and validation. `eva/benchmark.py` implements case selection, prompt construction, and scoring. `eva/inference.py` shares offline model loading and batched generation. `eva/simple_test.py` and `eva/evaluation.py` are Python entry points; use the scripts in `scripts/` for routine execution.
 
 Previous local validation loaded all four models and performed GPU inference with 128/512-token limits. The newer 4096-token configuration has not yet been used for a new model run or full evaluation. Earlier output records retain their original settings.
+
+## Prebuilt FlashAttention installation
+
+This project pins a prebuilt FlashAttention 2.8.3 wheel from the administrator-approved
+[mjun0812 release v0.10.0](https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.10.0).
+It targets CPython 3.12, Linux x86_64, CUDA 13.0, and PyTorch 2.14.
+The official releases inspected did not contain a matching PyTorch 2.14 wheel.
+
+The direct wheel URL is recorded in `[tool.uv.sources]`; `uv.lock` records its hash.
+Python is restricted to 3.12 and PyTorch/torchvision are pinned to 2.14.0/0.29.0 to
+keep this binary dependency aligned with the runtime. If changing these versions
+or moving to another platform, select a compatible prebuilt wheel and update the
+lockfile rather than reusing this binary.
+
+`no-build-package = ["flash-attn"]` prevents uv from compiling FlashAttention.
+The installation script additionally uses `--no-build` to prohibit source builds
+for every package during that operation. Do not replace the wheel source with a
+source distribution or enable an automatic compilation fallback on the shared server.
+
+```bash
+bash scripts/install_flash_attention.sh
+```
+
+The script synchronizes the locked environment and reports the package and native
+extension paths. Dependencies are installed inside `${ROOT_DIR}/.venv`, normally
+under `.venv/lib/python3.12/site-packages/`. The uv cache is a separate download and
+installation cache; use `uv cache dir` to locate it. `DATA_DIR` and `WORK_DIR` do not
+control where Python dependencies are installed.
+
+To verify GPU execution, set `GPU_ID` at the top of the check script and run:
+
+```bash
+bash scripts/check_flash_attention.sh
+```
+
+The check compares FP16/BF16 forward and backward attention with PyTorch's math
+SDPA implementation and also checks packed sequences with unequal lengths. It
+requires GPU access and uses only small tensors; it does not load a VLM.
+
+After verification, set `ATTN_IMPLEMENTATION="flash_attention_2"` in an inference
+Bash script to request this backend. The existing `sdpa` setting remains available.
+FlashAttention does not install the separate `flash-linear-attention` or
+`causal_conv1d` kernels used by Qwen3.5's linear-attention layers.
+
+Installation was verified on 2026-09-10 with Python 3.12.3, PyTorch 2.14.0+cu130,
+and an NVIDIA A800. Package and CUDA-extension imports passed. FP16/BF16 causal
+and noncausal forward/backward checks and packed variable-length forward checks
+passed against math SDPA. These are kernel correctness checks, not a VLM speed
+benchmark or a full BabyVision evaluation.
