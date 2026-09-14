@@ -16,13 +16,18 @@ MODELS=(
   "Qwen3-VL-4B-Instruct"
   "Qwen3-VL-8B-Instruct"
 )
-CASE_IDS=(445 462)
-OUTPUT_DIR="$WORK_DIR/smoke_all_4096"
-BENCH="babyvision"
-SPLIT="train"                  # Official split name; used as a test benchmark here.
-DATA_ROOT="$DATA_DIR"
+# Each image is paired with the prompt at the same array index.
+IMAGE_PATHS=(
+  "$DATA_DIR/BabyVision/train/image/445.jpg"
+  "$DATA_DIR/BabyVision/train/image/462.jpg"
+)
+PROMPTS=(
+  "One tiger in this 7-by-7 grid differs from the others. Give its row and column as (row,column)."
+  "Which of the four options A, B, C, D matches the pattern at the top? Explain your choice."
+)
+OUTPUT_DIR="$WORK_DIR/smoke_images_4096"
 CACHE_ROOT="$HF_HUB_CACHE"
-BATCHSIZE=1
+BATCHSIZE=2
 GPU_IDS="3"                    # Choose available GPUs; multi-GPU example: "0,3".
 MAX_NEW_TOKENS=4096             # Maximum new tokens; generation stops early at EOS.
 THINKING="off"                 # Qwen3.5: off/on/default; consider an initial budget of 8192 for on.
@@ -35,8 +40,8 @@ DRY_RUN=false                  # true: Validate cases and prompts without loadin
 # ==================================================
 
 ARGS=(
-  --bench "$BENCH" --split "$SPLIT"
-  --data-root "$DATA_ROOT" --cache-root "$CACHE_ROOT"
+  --cache-root "$CACHE_ROOT"
+  --image_path "${IMAGE_PATHS[@]}" --prompt "${PROMPTS[@]}"
   --batchsize "$BATCHSIZE" --gpu_ids "$GPU_IDS"
   --max-new-tokens "$MAX_NEW_TOKENS" --thinking "$THINKING"
   --dtype "$DTYPE" --attn-implementation "$ATTN_IMPLEMENTATION" --random-seed "$RANDOM_SEED"
@@ -44,13 +49,17 @@ ARGS=(
 [[ -z "$MAX_PIXELS" ]] || ARGS+=(--max-pixels "$MAX_PIXELS")
 [[ "$RESUME" == false ]] || ARGS+=(--resume)
 [[ "$DRY_RUN" == false ]] || ARGS+=(--dry-run)
-if (( ${#CASE_IDS[@]} == 0 || ${#MODELS[@]} == 0 )); then
-  echo "MODELS and CASE_IDS must not be empty." >&2
+if (( ${#IMAGE_PATHS[@]} == 0 || ${#IMAGE_PATHS[@]} != ${#PROMPTS[@]} )); then
+  echo "IMAGE_PATHS and PROMPTS must be nonempty arrays with equal lengths." >&2
   exit 2
 fi
-# Load models sequentially with the same cases and generation settings.
+if (( ${#MODELS[@]} == 0 )); then
+  echo "MODELS must not be empty." >&2
+  exit 2
+fi
+# Load models sequentially with the same image/prompt pairs and generation settings.
 for MODEL in "${MODELS[@]}"; do
   uv run --frozen python -m eva.simple_test \
-    --model "$MODEL" --case_ids "${CASE_IDS[@]}" \
+    --model "$MODEL" \
     --output "$OUTPUT_DIR/$MODEL.jsonl" "${ARGS[@]}"
 done

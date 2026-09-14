@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "accelerate>=1.9,<2",
     "flash-attn==2.8.3+cu130torch2.14",
+    "huggingface-hub>=1.30,<2",
     "pillow>=11",
     "pyarrow>=21",
     "torch==2.14.0",

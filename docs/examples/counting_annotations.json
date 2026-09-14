@@ -1,0 +1,229 @@
+{
+  "status": "example",
+  "sample_id": "counting_grouped_demo",
+  "coordinate_system": "image_long_side_normalized_xy",
+  "image_size": [
+    1000,
+    600
+  ],
+  "config": {
+    "config_id": "counting_example_v1",
+    "reading_order": "row_major_bbox",
+    "row_center_span_height_ratio": 0.5,
+    "max_group_instances": 6
+  },
+  "target_count": 15,
+  "instances": [
+    {
+      "instance_id": "ball_15",
+      "point_id": "point_15",
+      "point": [
+        0.48,
+        0.48
+      ],
+      "bbox_xyxy": [
+        0.455,
+        0.455,
+        0.505,
+        0.505
+      ]
+    },
+    {
+      "instance_id": "ball_14",
+      "point_id": "point_14",
+      "point": [
+        0.36,
+        0.48
+      ],
+      "bbox_xyxy": [
+        0.335,
+        0.455,
+        0.385,
+        0.505
+      ]
+    },
+    {
+      "instance_id": "ball_13",
+      "point_id": "point_13",
+      "point": [
+        0.24,
+        0.48
+      ],
+      "bbox_xyxy": [
+        0.215,
+        0.455,
+        0.265,
+        0.505
+      ]
+    },
+    {
+      "instance_id": "ball_12",
+      "point_id": "point_12",
+      "point": [
+        0.12,
+        0.48
+      ],
+      "bbox_xyxy": [
+        0.095,
+        0.455,
+        0.145,
+        0.505
+      ]
+    },
+    {
+      "instance_id": "ball_11",
+      "point_id": "point_11",
+      "point": [
+        0.6,
+        0.3
+      ],
+      "bbox_xyxy": [
+        0.575,
+        0.275,
+        0.625,
+        0.325
+      ]
+    },
+    {
+      "instance_id": "ball_10",
+      "point_id": "point_10",
+      "point": [
+        0.48,
+        0.3
+      ],
+      "bbox_xyxy": [
+        0.455,
+        0.275,
+        0.505,
+        0.325
+      ]
+    },
+    {
+      "instance_id": "ball_09",
+      "point_id": "point_9",
+      "point": [
+        0.36,
+        0.3
+      ],
+      "bbox_xyxy": [
+        0.335,
+        0.275,
+        0.385,
+        0.325
+      ]
+    },
+    {
+      "instance_id": "ball_08",
+      "point_id": "point_8",
+      "point": [
+        0.24,
+        0.3
+      ],
+      "bbox_xyxy": [
+        0.215,
+        0.275,
+        0.265,
+        0.325
+      ]
+    },
+    {
+      "instance_id": "ball_07",
+      "point_id": "point_7",
+      "point": [
+        0.12,
+        0.3
+      ],
+      "bbox_xyxy": [
+        0.095,
+        0.275,
+        0.145,
+        0.325
+      ]
+    },
+    {
+      "instance_id": "ball_06",
+      "point_id": "point_6",
+      "point": [
+        0.72,
+        0.12
+      ],
+      "bbox_xyxy": [
+        0.695,
+        0.095,
+        0.745,
+        0.145
+      ]
+    },
+    {
+      "instance_id": "ball_05",
+      "point_id": "point_5",
+      "point": [
+        0.6,
+        0.12
+      ],
+      "bbox_xyxy": [
+        0.575,
+        0.095,
+        0.625,
+        0.145
+      ]
+    },
+    {
+      "instance_id": "ball_04",
+      "point_id": "point_4",
+      "point": [
+        0.48,
+        0.12
+      ],
+      "bbox_xyxy": [
+        0.455,
+        0.095,
+        0.505,
+        0.145
+      ]
+    },
+    {
+      "instance_id": "ball_03",
+      "point_id": "point_3",
+      "point": [
+        0.36,
+        0.12
+      ],
+      "bbox_xyxy": [
+        0.335,
+        0.095,
+        0.385,
+        0.145
+      ]
+    },
+    {
+      "instance_id": "ball_02",
+      "point_id": "point_2",
+      "point": [
+        0.24,
+        0.12
+      ],
+      "bbox_xyxy": [
+        0.215,
+        0.095,
+        0.265,
+        0.145
+      ]
+    },
+    {
+      "instance_id": "ball_01",
+      "point_id": "point_1",
+      "point": [
+        0.12,
+        0.12
+      ],
+      "bbox_xyxy": [
+        0.095,
+        0.095,
+        0.145,
+        0.145
+      ]
+    }
+  ],
+  "notes": "实例数组故意倒序；轨迹根据 bbox 重新排序。几何标注为程序构造示例，未提供真实图像。"
+}

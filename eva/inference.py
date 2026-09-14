@@ -10,6 +10,7 @@ import time
 from data.prepare_data import snapshot
 from utils.project_paths import load_paths
 from eva.benchmark import load_cases, parse_ids, prompt_for, score, summarize
+from eva.inputs import load_image_prompts, summarize_inputs
 
 MODELS = ['Qwen3.5-4B', 'Qwen3.5-9B', 'Qwen3-VL-4B-Instruct', 'Qwen3-VL-8B-Instruct']
 
@@ -25,17 +26,26 @@ def parser(full=False):
     paths = load_paths()
     p = argparse.ArgumentParser(description='Offline local VLM benchmark inference')
     p.add_argument('--model', '--model-name', '--model_name', required=True)
-    p.add_argument('--bench', '--bench-name', '--bench_name', type=str.lower,
-                   choices=['babyvision', 'babyvision-gen'], default='babyvision')
-    p.add_argument('--case-ids', '--case_ids', nargs='+', required=not full,
-                   help='Original taskIds: 445 464, 445,464, or "[445,464]"')
+    if full:
+        p.add_argument('--bench', '--bench-name', '--bench_name', type=str.lower,
+                       choices=['babyvision', 'babyvision-gen'], default='babyvision')
+        p.add_argument('--case-ids', '--case_ids', nargs='+',
+                       help='Original taskIds: 445 464, 445,464, or "[445,464]"')
+        p.add_argument('--data-root', default=paths['DATA_DIR'])
+        p.add_argument('--split', default='train')
+        p.add_argument('--gen-text-only', action='store_true',
+                       help='Explicitly opt into unscored BabyVision-Gen text diagnostics')
+    else:
+        p.add_argument('--image-path', '--image_path', '--image-paths', '--image_paths',
+                       dest='image_paths', nargs='+', required=True,
+                       help='List of local image paths, paired with prompts by index')
+        p.add_argument('--prompt', '--prompts', dest='prompts', nargs='+', required=True,
+                       help='List of prompt strings; quote each prompt separately')
     p.add_argument('--output', '--output-file', '--output_file', required=True,
                    help='JSONL predictions; companion .meta.json and .summary.json are created')
     p.add_argument('--batchsize', '--batch-size', type=positive, default=1)
     p.add_argument('--gpu-ids', '--gpu_ids', default='0', help='Physical GPU IDs, e.g. 0,1 or "[0,1]"; cpu is supported')
-    p.add_argument('--data-root', default=paths['DATA_DIR'])
     p.add_argument('--cache-root', default=paths['HF_HUB_CACHE'])
-    p.add_argument('--split', default='train')
     p.add_argument('--max-new-tokens', type=positive, default=4096)
     p.add_argument('--max-pixels', type=positive, default=None,
                    help='Optional processor pixel cap; default preserves the model processor settings')
@@ -45,8 +55,7 @@ def parser(full=False):
     p.add_argument('--seed', '--random-seed', '--random_seed', dest='seed', type=int, default=0,
                    help='Random seed for Python, NumPy, and PyTorch CPU/CUDA RNGs (default: 0)')
     p.add_argument('--resume', action='store_true', help='Resume only with exactly matching run configuration')
-    p.add_argument('--dry-run', action='store_true', help='Validate IDs and write prompts without loading model weights')
-    p.add_argument('--gen-text-only', action='store_true', help='Explicitly opt into unscored BabyVision-Gen text diagnostics')
+    p.add_argument('--dry-run', action='store_true', help='Validate inputs and write prompts without loading model weights')
     return p
 
 
@@ -78,9 +87,8 @@ def write_json(path, obj):
 def main(full=False):
     p = parser(full)
     args = p.parse_args()
-    if args.bench == 'babyvision-gen' and not args.gen_text_only:
+    if full and args.bench == 'babyvision-gen' and not args.gen_text_only:
         p.error('These Qwen models cannot generate images. Use --gen-text-only for unscored text diagnostics.')
-    ids = parse_ids(args.case_ids)
     gpu = args.gpu_ids.strip()
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     if gpu != 'cpu':
@@ -91,18 +99,31 @@ def main(full=False):
     # Set visibility before importing torch/transformers.
     os.environ['HF_HUB_OFFLINE'] = '1'
     os.environ['TRANSFORMERS_OFFLINE'] = '1'
-    rows, manifest = load_cases(args.data_root, args.bench, args.split, ids)
+    manifest = None
+    if full:
+        rows, manifest = load_cases(args.data_root, args.bench, args.split, parse_ids(args.case_ids))
+    else:
+        rows = load_image_prompts(args.image_paths, args.prompts)
+    id_key = 'taskId' if full else 'sample_id'
+    summarize_run = summarize if full else summarize_inputs
     model_path = resolve_model(args.model, args.cache_root)
     output = Path(args.output).expanduser().resolve()
-    if output == manifest or output in [Path(r['image_path']) for r in rows]:
-        raise ValueError('Output cannot replace benchmark input')
-    output.parent.mkdir(parents=True, exist_ok=True)
     meta_path = output.with_suffix(output.suffix + '.meta.json')
     summary_path = output.with_suffix(output.suffix + '.summary.json')
-    config = {k: v for k, v in vars(args).items() if k not in ('resume', 'output', 'case_ids')}
-    config.update(model_path=str(model_path), selected_ids=[r['taskId'] for r in rows],
-                  manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
+    protected = {Path(r['image_path']) for r in rows}
+    if manifest is not None:
+        protected.add(manifest)
+    if any(path.resolve() in protected for path in (output, meta_path, summary_path)):
+        raise ValueError('Output files cannot replace an input image or manifest')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    config = {k: v for k, v in vars(args).items()
+              if k not in ('resume', 'output', 'case_ids', 'image_paths', 'prompts')}
+    config.update(model_path=str(model_path), selected_ids=[r[id_key] for r in rows],
                   prompt_version=1, decoding='greedy')
+    if full:
+        config['manifest_sha256'] = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    else:
+        config.update(input_mode='image_prompt', inputs=rows)
     records = []
     if output.exists():
         if not args.resume:
@@ -111,7 +132,7 @@ def main(full=False):
             raise ValueError('Resume configuration differs from the original run')
         # Fail explicitly on torn JSONL; do not silently lose or double-count records.
         records = [json.loads(line) for line in output.read_text().splitlines() if line.strip()]
-        done = [r['taskId'] for r in records]
+        done = [r[id_key] for r in records]
         if len(done) != len(set(done)) or not set(done).issubset(config['selected_ids']):
             raise ValueError('Invalid IDs in existing output')
     else:
@@ -121,10 +142,10 @@ def main(full=False):
             raise FileExistsError('Companion output files already exist; choose another output')
         write_json(meta_path, {'config': config, 'created_utc': datetime.now(timezone.utc).isoformat()})
         output.touch(exist_ok=False)
-    done = {r['taskId'] for r in records}
-    remaining = [r for r in rows if r['taskId'] not in done]
+    done = {r[id_key] for r in records}
+    remaining = [r for r in rows if r[id_key] not in done]
     if not remaining:
-        write_json(summary_path, summarize(records))
+        write_json(summary_path, summarize_run(records))
         print(f'Already complete: {output}')
         return
     model = processor = None
@@ -158,7 +179,7 @@ def main(full=False):
     with output.open('a', encoding='utf-8') as handle:
         for start in range(0, len(remaining), args.batchsize):
             batch = remaining[start:start + args.batchsize]
-            prompts = [prompt_for(row, args.bench) for row in batch]
+            prompts = [prompt_for(row, args.bench) if full else row['prompt'] for row in batch]
             started = time.perf_counter()
             if args.dry_run:
                 responses = [''] * len(batch)
@@ -192,15 +213,19 @@ def main(full=False):
                     finishes.append('eos' if stop is not None else 'length')
             elapsed = time.perf_counter() - started
             for row, prompt, response, count, finish in zip(batch, prompts, responses, token_counts, finishes):
-                result = {key: row.get(key) for key in ('taskId', 'type', 'subtype', 'ansType')}
-                result.update(benchmark=args.bench, model=args.model, image=row['image_path'],
+                result = ({key: row.get(key) for key in ('taskId', 'type', 'subtype', 'ansType')}
+                          if full else {'sample_id': row['sample_id'], 'image_path': row['image_path']})
+                if full:
+                    result.update(benchmark=args.bench, image=row['image_path'])
+                result.update(model=args.model,
                               prompt=prompt, response=response, generated_tokens=count, finish_reason=finish,
                               batch_seconds=elapsed, batch_size=len(batch))
-                result['score'] = (score(row, response, args.bench) if not args.dry_run else
-                                   {'prediction': None, 'reference': None, 'correct': None, 'metric': 'dry_run'})
+                if full:
+                    result['score'] = (score(row, response, args.bench) if not args.dry_run else
+                                       {'prediction': None, 'reference': None, 'correct': None, 'metric': 'dry_run'})
                 handle.write(json.dumps(result, ensure_ascii=False) + '\n')
                 handle.flush()
                 records.append(result)
-                print(f"[{len(records)}/{len(rows)}] taskId={row['taskId']} {finish}: {response[:120]!r}", flush=True)
-            write_json(summary_path, summarize(records))
+                print(f"[{len(records)}/{len(rows)}] {id_key}={row[id_key]} {finish}: {response[:120]!r}", flush=True)
+            write_json(summary_path, summarize_run(records))
     print(f'Predictions: {output}\nSummary: {summary_path}', flush=True)

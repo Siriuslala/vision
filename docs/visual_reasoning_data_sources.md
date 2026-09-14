@@ -71,6 +71,14 @@ Qwen 两份报告给出的规模说明基础感知与知识来自长期、大量
 
 例如，相同的“读两处并比较”可以出现在自然物体、表格单元格、图表系列、相似图案中；相同的“沿连接继续”可以出现在曲线、线路图、流程图中。相同视觉操作在不同内容中的组合，可用于研究跨任务泛化。
 
+### 3.4 SAM 3 辅助点标注转换
+
+SAM 3 的官方单图交互式 predictor 支持正负点及框提示，并可输出多个候选 mask 和预测质量分数；同一图像表征可用于多次提示解码。采用原图像素坐标调用交互式 predictor，mask 外接框及最终观察窗口再转换为本项目的长边归一化坐标。该模型用于离线标注，所产生区域按伪标注审核。[官方实现](https://github.com/facebookresearch/sam3/blob/main/sam3/model/sam1_task_predictor.py)、[交互示例](https://github.com/facebookresearch/sam3/blob/main/examples/sam3_image_interactive.ipynb)
+
+核查日期为 2026-09-14。此处确认公开能力与代码入口，尚未运行模型或统计本项目数据上的分割合格率。规则图形的几何方法、分割提示及候选筛选见 [构造方案](point_to_window.md)。正式制数需记录代码提交、checkpoint、提示、质量阈值和失败情况。
+
+用于 counting 的 point 数据需核验目标集合与原始总数的一致性。完成实例框构造后，根据 bbox 重排实例，动态合并邻近目标，并生成局部计数与最终求和事件；完整流程见 [Counting 轨迹构造](counting_trajectories.md)。来源点数组的排列不作为读取顺序，分割置信度与目标总数分别审核。
+
 ## 4. 来源记录与转换统计
 
 每个来源建立 manifest。下列为来源层面的记录项，不替代 [样本及 rollout 字段规范](visual_reasoning_data_format.md)：
@@ -78,13 +86,16 @@ Qwen 两份报告给出的规模说明基础感知与知识来自长期、大量
 ```text
 source_name, official_url, source_revision, source_config, source_split
 original_image_id, image_sha256, original_sample_id
-original_license, original_coordinate_convention
+original_license, original_coordinate_convention, raw_annotation_path
+geometry_conversion_version, orientation_transform
 raw_count, downloaded_count, decoded_count, deduplicated_count, accepted_count
 available_supervision, annotation_origin, conversion_version
 split_group, exclusion_reason, teacher_version, review_status
 ```
 
 `raw_count` 要标明是图像、QA、对话行还是训练 token。只下载被选中的配置和分片；先抽取小样本验证读取、图像和坐标，再扩大。
+
+`raw_annotation_path` 为原始标注文件相对 `DATA_DIR` 的路径，配合来源版本与原始记录编号保留原始坐标。`geometry_conversion_version` 记录坐标转换实现版本，`orientation_transform` 记录原图朝向规范化采用的变换，无变换时标为 `identity`。源坐标约定需覆盖单位、像素点位定义及框边界端点规则。转换后数据使用 [数据规范](visual_reasoning_data_format.md) 的长边归一化坐标；标准窗口保存一套中心和尺寸，像素几何在审核及显示时还原。
 
 许可字段不能只复制页面顶端标签：例如 VisualCoT 页面的 Apache-2.0 标签与正文 Attribution-NonCommercial 4.0 表述不同；LLaVA-OneVision 同样有页面许可标签与学术用途说明。应保存原声明和来源引用，在确定数据用途时核对原始数据条款，不能把混合集标签当作所有原图的统一授权。
 

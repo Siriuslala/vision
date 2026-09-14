@@ -823,6 +823,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "flash-attn" },
+    { name = "huggingface-hub" },
     { name = "pillow" },
     { name = "pyarrow" },
     { name = "torch" },
@@ -834,6 +835,7 @@ dependencies = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.9,<2" },
     { name = "flash-attn", url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.10.0/flash_attn-2.8.3%2Bcu130torch2.14-cp312-cp312-linux_x86_64.whl" },
+    { name = "huggingface-hub", specifier = ">=1.30,<2" },
     { name = "pillow", specifier = ">=11" },
     { name = "pyarrow", specifier = ">=21" },
     { name = "torch", specifier = "==2.14.0" },

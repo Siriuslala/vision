@@ -1,0 +1,1 @@
+"""SFT core interfaces."""
