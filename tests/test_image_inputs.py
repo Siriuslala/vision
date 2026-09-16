@@ -85,6 +85,22 @@ class ImageInputTests(unittest.TestCase):
         self.assertIn('A. left', record['prompt'])
         self.assertEqual(record['score']['metric'], 'dry_run')
 
+    def test_sampling_resume_preserves_batch_and_rejects_changed_parameters(self):
+        prompts = ['First.', 'Second.', 'Third.']
+        flags = ['--do-sample', '--temperature', '0.9', '--top-k', '12', '--top-p', '0.95']
+        self.run_dry(prompts, flags)
+        original = [json.loads(line) for line in self.output.read_text().splitlines()]
+        self.output.write_text(json.dumps(original[0]) + '\n')
+        self.run_dry(prompts, [*flags, '--resume'])
+        resumed = [json.loads(line) for line in self.output.read_text().splitlines()]
+        for key in ('sample_id', 'batch_size', 'batch_seed', 'decoding'):
+            self.assertEqual([r[key] for r in resumed], [r[key] for r in original])
+        config = json.loads(self.output.with_suffix('.jsonl.meta.json').read_text())['config']
+        self.assertEqual(config['generation']['top_k'], 12)
+        self.assertEqual(config['generation']['temperature'], 0.9)
+        with self.assertRaisesRegex(ValueError, 'configuration differs'):
+            self.run_dry(prompts, [*flags, '--top-p', '0.5', '--resume'])
+
     def test_cli_interfaces(self):
         direct_help = parser().format_help()
         self.assertIn('--image_path', direct_help)

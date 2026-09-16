@@ -1,11 +1,14 @@
 """Counting geometry and source-integrity regression checks."""
 import hashlib
+import io
+import json
+from unittest.mock import patch
 import tempfile
 import unittest
 from pathlib import Path
 
 from PIL import Image
-from data.sft.datasets.pixmo import counting_candidate, group_instances, points_of
+from data.sft.datasets.pixmo import counting_candidate, group_instances, points_of, prepare
 
 
 class PixmoTests(unittest.TestCase):
@@ -31,6 +34,26 @@ class PixmoTests(unittest.TestCase):
             row["image_sha256"] = "0" * 64
             with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
                 counting_candidate(row, "test:0", "test", path, audit, "audits/test.json")
+
+    def test_changed_image_requires_explicit_reannotation_queue(self):
+        buffer = io.BytesIO()
+        Image.new("RGB", (20, 10), "white").save(buffer, format="PNG")
+        raw = buffer.getvalue()
+        row = {"image_sha256": "0"*64, "image_url": "fixture", "label": "squares", "count": 1,
+               "points": {"x": [5.], "y": [5.]}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("data.sft.datasets.pixmo.rows", return_value=iter([("train:0", row, "revision")])), patch("data.sft.datasets.pixmo.urlopen", return_value=io.BytesIO(raw)):
+                with self.assertRaises(ValueError):
+                    prepare(root, root/"strict", 1, True)
+            with patch("data.sft.datasets.pixmo.rows", return_value=iter([("train:0", row, "revision")])), patch("data.sft.datasets.pixmo.urlopen", return_value=io.BytesIO(raw)):
+                prepare(root, root/"reannotate", 1, True, allow_image_reannotation=True)
+            audit = json.loads((root/"reannotate/audits/train_0.json").read_text())
+            self.assertEqual(audit["source_image_sha256"], "0"*64)
+            self.assertEqual(audit["image_sha256"], hashlib.sha256(raw).hexdigest())
+            self.assertTrue(audit["image_reannotation_required"])
+            self.assertFalse(audit["complete_instance_set_reviewed"])
+            self.assertEqual(row["image_sha256"], "0"*64)
 
     def test_conflicting_points_rejected(self):
         with self.assertRaisesRegex(ValueError, "duplicate"):

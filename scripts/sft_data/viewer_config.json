@@ -1,0 +1,55 @@
+{
+  "datasets": [
+    {
+      "name": "Visual-CoT",
+      "jsonl_path": "/archive/public/tmp/visual_cot_pilot_final/candidates.jsonl",
+      "data_root": "/archive/public/tmp/visual_cot_pilot_data"
+    },
+    {
+      "name": "Thyme-SFT",
+      "jsonl_path": "/archive/public/tmp/sft-thyme-smoke/candidates.jsonl",
+      "data_root": "/archive/public/tmp/sft-thyme-data"
+    },
+    {
+      "name": "CoSyn-400K",
+      "jsonl_path": "/archive/public/tmp/sft_cosyn_reviewed_smoke/candidates.jsonl",
+      "data_root": "/archive/public/tmp/sft_pilot_data"
+    },
+    {
+      "name": "LLaVA-OneVision",
+      "jsonl_path": "/archive/public/tmp/sft_llava_reviewed_smoke/candidates.jsonl",
+      "data_root": "/archive/public/tmp/sft_pilot_data"
+    },
+    {
+      "name": "SFT v2 · LLaVA · 正常多步",
+      "jsonl_path": "/archive/public/tmp/sft_v2_20260915/viewer_examples/llava_normal.jsonl",
+      "data_root": "/archive/public/tmp/sft_v2_20260915"
+    },
+    {
+      "name": "SFT v2 · Thyme · 正常",
+      "jsonl_path": "/archive/public/tmp/sft_v2_20260915/viewer_examples/thyme_normal.jsonl",
+      "data_root": "/archive/public/tmp/sft_v2_20260915"
+    },
+    {
+      "name": "SFT v2 · Thyme · 纠错",
+      "jsonl_path": "/archive/public/tmp/sft_v2_20260915/viewer_examples/thyme_self_correction.jsonl",
+      "data_root": "/archive/public/tmp/sft_v2_20260915"
+    },
+    {
+      "name": "SFT v2 · CoSyn · 图表",
+      "jsonl_path": "/archive/public/tmp/sft_v2_20260915/viewer_examples/cosyn_normal.jsonl",
+      "data_root": "/archive/public/tmp/sft_v2_20260915"
+    },
+    {
+      "name": "SFT v2 · PixMo · 计数",
+      "jsonl_path": "/archive/public/tmp/sft_v2_20260915/viewer_examples/pixmo_normal.jsonl",
+      "data_root": "/archive/public/tmp/sft_v2_20260915"
+    },
+    {
+      "name": "SFT v2 · Visual-CoT",
+      "jsonl_path": "/archive/public/tmp/sft_v2_20260915/viewer_examples/visual_cot_normal.jsonl",
+      "data_root": "/archive/public/tmp/sft_v2_20260915"
+    }
+  ],
+  "font_path": "/archive/public/tmp/group-meeting-NotoSansCJKsc-Regular.otf"
+}

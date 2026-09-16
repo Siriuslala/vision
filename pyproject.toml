@@ -8,16 +8,21 @@ dependencies = [
     "accelerate>=1.9,<2",
     "flash-attn==2.8.3+cu130torch2.14",
     "huggingface-hub>=1.30,<2",
+    "httpx>=0.28,<1",
+    "filelock>=3.18,<4",
     "pillow>=11",
     "pyarrow>=21",
     "torch==2.14.0",
     "torchvision==0.29.0",
+    "tqdm>=4.67,<5",
     "transformers>=5.2,<6",
+    "flash-linear-attention[cuda]==0.5.2",
+    "markdown-it-py>=4,<5",
 ]
 
 [tool.uv]
-# Never compile FlashAttention locally on the shared server.
-no-build-package = ["flash-attn"]
+# Never build CUDA extension source distributions on the shared server.
+no-build-package = ["flash-attn", "causal-conv1d"]
 
 [tool.uv.sources]
 # Prebuilt for CPython 3.12, Linux x86_64, CUDA 13.0, and PyTorch 2.14.

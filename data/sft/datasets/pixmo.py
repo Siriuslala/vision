@@ -195,7 +195,7 @@ def iter_candidates(source_root: Path, limit: int = 10, *, image_cache: Path | N
             yield {"source_id": source_id, "reject_reason": str(exc)}
 
 
-def prepare(source_root: Path, output_root: Path, limit: int, download: bool) -> None:
+def prepare(source_root: Path, output_root: Path, limit: int, download: bool, allow_image_reannotation: bool = False) -> None:
     """Create an immutable point audit queue and optional image downloads."""
     if output_root.exists() and any(output_root.iterdir()):
         raise ValueError("Preparation output must be empty; existing annotations are never overwritten")
@@ -215,10 +215,21 @@ def prepare(source_root: Path, output_root: Path, limit: int, download: bool) ->
                     if len(raw) > 32 * 1024 * 1024:
                         raise ValueError("Image exceeds 32 MiB limit")
                     path.write_bytes(raw)
-                width, height = checked_image(path, row)
+                original_sha = row["image_sha256"]
+                actual_sha = file_sha256(path)
+                checked_row = row
+                if actual_sha != original_sha and allow_image_reannotation:
+                    # This queue carries a new image revision, not verified source labels.
+                    checked_row = {**row, "image_sha256": actual_sha}
+                    target = image_dir / actual_sha
+                    path.rename(target)
+                    path = target
+                width, height = checked_image(path, checked_row)
                 if any(not (0 <= x <= width and 0 <= y <= height) for x, y in points):
                     raise ValueError("Point outside image")
-                audit = {"source_id": source_id, "image_sha256": row["image_sha256"],
+                audit = {"source_id": source_id, "image_sha256": actual_sha,
+                         "source_image_sha256": original_sha, "image_path": str(path.resolve()),
+                         "image_reannotation_required": actual_sha != original_sha,
                          "label": row["label"], "count": row["count"], "point_units": "pixels",
                          "points": [{"instance_id": f"point_{i}", "point": p} for i, p in enumerate(points)],
                          "method": None, "config_id": None, "instance_boxes_reviewed": False,
@@ -231,7 +242,8 @@ def prepare(source_root: Path, output_root: Path, limit: int, download: bool) ->
                         draw.ellipse((x-5, y-5, x+5, y+5), outline="red", width=2)
                         draw.text((x+7, y), str(i), fill="red")
                     image.save(audit_dir / (audit_key(source_id) + ".jpg"))
-                result["status"] = "point_audit_required"
+                result["status"] = "image_reannotation_required" if actual_sha != original_sha else "point_audit_required"
+                result.update(source_image_sha256=original_sha, actual_image_sha256=actual_sha)
                 success += 1
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 result.update(status="rejected", reason=str(exc))
@@ -247,10 +259,12 @@ def main() -> None:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--download-images", action="store_true")
+    parser.add_argument("--allow-image-reannotation", action="store_true",
+                        help="Queue changed images for independent reannotation; never accept original labels automatically")
     args = parser.parse_args()
     if args.limit < 0:
         parser.error("limit must be nonnegative")
-    prepare(args.source_root, args.output_root, args.limit, args.download_images)
+    prepare(args.source_root, args.output_root, args.limit, args.download_images, args.allow_image_reannotation)
 
 
 if __name__ == "__main__":

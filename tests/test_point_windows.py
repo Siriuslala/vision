@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from PIL import Image, ImageDraw
-from data.sft.tools.point_windows import Sam3LocalBackend, file_sha256, geometry_candidates, mask_candidate, propose
+from data.sft.tools.point_windows import Sam3LocalBackend, file_sha256, geometry_candidates, mask_candidate, propose, select_mask_candidate
 
 
 class PointWindowTests(unittest.TestCase):
@@ -50,6 +50,13 @@ class PointWindowTests(unittest.TestCase):
             self.assertEqual(result["instances"], [])
             self.assertEqual(len(result["candidate_instances"]), 3)
             self.assertEqual(json.loads((audits / "fixture.json").read_text()), audit)
+
+    def test_automatic_selection_requires_consistent_prompts(self):
+        def record(box, score=0.9):
+            return {"candidates": [{"status": "pending", "box": box, "score": score}]}
+        self.assertEqual(select_mask_candidate([record([0, 0, 10, 10])])["status"], "requires_semantic_verification")
+        self.assertEqual(select_mask_candidate([record([0, 0, 10, 10]), record([8, 8, 18, 18])])["status"], "rejected")
+        self.assertEqual(select_mask_candidate([record([0, 0, 10, 10], 0.3)])["status"], "rejected")
 
     def test_sam_missing_checkpoint_is_explicit(self):
         with self.assertRaises(FileNotFoundError):

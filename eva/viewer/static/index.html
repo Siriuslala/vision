@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vision · Results</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<header><div class="brand"><span class="mark">V</span><div>Vision <span class="sub">/ Results explorer</span></div></div><span class="local">LOCAL WORKSPACE</span></header>
+<main>
+<section class="toolbar"><div class="run-control"><label for="run">Inference run</label><select id="run"></select></div><button id="reload">Reload files</button><div id="totals" class="totals"></div></section>
+<section class="navigation"><input id="search" type="search" placeholder="Search sample ID or question…" aria-label="Search samples"><select id="filter" aria-label="Filter samples"><option value="all">All samples</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option><option value="unscored">Unscored</option><option value="length">Truncated</option></select><select id="sample" aria-label="Select sample"></select><button id="previous" aria-label="Previous sample">←</button><span id="position"></span><button id="next" aria-label="Next sample">→</button></section>
+<div id="error" role="alert" hidden></div><div id="empty" hidden>No samples match this selection.</div>
+<div id="workspace" class="workspace" hidden>
+<section class="panel reference-panel"><div class="panel-title"><span class="eyebrow">01 / REFERENCE</span><span id="sample-id" class="badge"></span></div><div class="image-stage"><button id="zoom" aria-label="Enlarge sample image"><img id="image" alt="Test sample"></button><span class="image-hint">Click image to enlarge</span></div><div class="reference-content"><div id="category" class="category"></div><h2>Question</h2><div id="question" class="markdown"></div><div class="answer-box"><h3>Reference answer</h3><div id="reference" class="markdown"></div></div><details id="reference-reasoning-block"><summary>Reference reasoning</summary><div id="reference-reasoning" class="markdown"></div></details><details><summary>Exact model prompt</summary><pre id="prompt" class="raw"></pre></details></div></section>
+<section class="panel output-panel"><div class="panel-title"><span class="eyebrow">02 / MODEL OUTPUT</span><button id="copy">Copy output</button></div><div class="output-content"><h1 id="model"></h1><div id="badges" class="badges"></div><div class="view-options"><label><input id="raw-mode" type="checkbox"> Plain text</label><label title="Only enable for files that contain double-escaped line breaks"><input id="literal-breaks" type="checkbox"> Decode literal \n</label></div><section id="model-reasoning-block"><h3>Model reasoning</h3><div id="model-reasoning" class="markdown"></div></section><div id="response" class="markdown response"></div><pre id="raw-response" class="raw response" hidden></pre><div class="end-mark">END OF SAVED RESPONSE</div></div></section>
+</div>
+<footer>Original model output is preserved. Scores reflect the source run’s evaluation method.</footer>
+</main>
+<dialog id="image-dialog"><button id="close-dialog">Close ×</button><img id="large-image" alt="Enlarged test sample"></dialog>
+</body></html>

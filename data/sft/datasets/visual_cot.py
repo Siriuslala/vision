@@ -200,9 +200,11 @@ def candidate_from_record(record: dict[str, Any], source_root: Path, source_file
             "source_file": source_file, "source_line": line_number,
             "source_dataset": dataset, "source_image": name,
             "source_coordinate_system": "original_image_pixel_xyxy",
+            "source_boxes_pixel_xyxy": boxes,
             "source_bbox_count": len(boxes), "window_method": "source_bbox_union_v1",
             "source_functional_program": record.get("reasoning"),
             "source_full_answer": record.get("full_answer"),
+            "source_thought": thought,
             "language_origin": "source_thought" if thought else "none",
             "review_requirements": ["window_evidence_coverage", "cached_feature_legibility",
                                     "source_thought_image_consistency"],
@@ -252,6 +254,29 @@ def iter_candidates(source_root: Path, limit: int,
                 except (ValueError, KeyError, TypeError, OSError) as exc:
                     yield {"source_id": source_id, "reject_reason": str(exc),
                            "metadata": {"source_file": relative, "source_line": line_number}}
+
+
+def iter_tasks(source_root: Path, limit: int,
+               image_cache: Path | None = None) -> Iterator[dict[str, Any]]:
+    """Expose separate source boxes as unverified teacher hints, without imposing order.
+
+    The legacy candidate converter retains its union-window behavior. A teacher
+    task intentionally has no events: the source does not align each box to a
+    thought, so a new sequence needs evidence and semantic checks.
+    """
+    for candidate in iter_candidates(source_root, limit, image_cache):
+        if "reject_reason" in candidate:
+            yield candidate
+            continue
+        candidate.pop("events")
+        candidate.pop("visual_only_safe")
+        metadata = candidate["metadata"]
+        metadata.pop("window_method")
+        metadata["source_box_order"] = "unverified"
+        metadata["source_correction"] = "unverified"
+        metadata["trajectory_origin"] = "local_teacher_regeneration"
+        candidate["source_boxes"] = metadata["source_boxes_pixel_xyxy"]
+        yield candidate
 
 
 if __name__ == "__main__":

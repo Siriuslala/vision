@@ -159,8 +159,10 @@ def build_records(candidate: dict, dataset: str, image_output: Path, data_root: 
             else:
                 raise ValueError('Adapter events may contain only reads and reasoning text')
             events.append(event)
-        if not region_id:
-            raise ValueError('No ROI evidence: direct-answer production is outside this run')
+        if not region_id and not candidate.get('direct_answer',False):
+            raise ValueError('No ROI evidence without an explicit direct-answer decision')
+        if not region_id and events:
+            raise ValueError('Direct-answer examples must not contain intermediate reasoning')
         events.append({'event_id':len(events)+1,'type':'finish','supervise':True})
         metadata = copy.deepcopy(candidate.get('metadata',{}))
         for derivation in metadata.get('window_derivations',[]):
@@ -176,7 +178,7 @@ def build_records(candidate: dict, dataset: str, image_output: Path, data_root: 
         group = candidate.get('group_id',image['sha256'])
         source_split = candidate.get('source_split','train')
         split = 'validation' if source_split in ('val','validation','dev') else 'test' if source_split=='test' else ('validation' if int(digest(group)[:8],16)%100 < 5 else 'train')
-        record = {'schema_version':'1.1','record_type':'sft','sample_id':dataset+':'+digest([source_id,mode])[:24], 'task_type':candidate['task_type'], 'image':image,'query':candidate['query'], 'answer':copy.deepcopy(candidate['answer']), 'reasoning_mode':mode,'coordinate_system':'image_long_side_normalized_xy','initial_region':{'region_id':0,'center':[width/scale/2,height/scale/2],'size':[width/scale,height/scale]},'trajectory':events,'verification':candidate.get('verification'), 'provenance':{'source_name':SOURCES[dataset],'source_revision':candidate.get('source_revision','local-unversioned'),'source_sample_id':source_id,'source_split':source_split,'split':split,'group_id':str(group),'annotation_origin':candidate.get('annotation_origin','derived'),'conversion_version':'1','seed':0},'quality':{'status':'pending','notes':'Automatic conversion; requires task, visual-feature and batch quality review before training.'},'metadata':metadata}
+        record = {'schema_version':'1.1','record_type':'sft','sample_id':dataset+':'+digest([source_id,mode]+([candidate['variant']] if 'variant' in candidate else []))[:24], 'task_type':candidate['task_type'], 'image':image,'query':candidate['query'], 'answer':copy.deepcopy(candidate['answer']), 'reasoning_mode':mode,'coordinate_system':'image_long_side_normalized_xy','initial_region':{'region_id':0,'center':[width/scale/2,height/scale/2],'size':[width/scale,height/scale]},'trajectory':events,'verification':candidate.get('verification'), 'provenance':{'source_name':SOURCES[dataset],'source_revision':candidate.get('source_revision','local-unversioned'),'source_sample_id':source_id+('/variant/'+candidate['variant'] if 'variant' in candidate else ''),'source_split':source_split,'split':split,'group_id':str(group),'annotation_origin':candidate.get('annotation_origin','derived'),'conversion_version':'1','seed':0},'quality':{'status':'pending','notes':'Automatically checked where metadata records the result; awaiting final sample inspection and batch acceptance.'},'metadata':metadata}
         validate_record(record)
         records.append(record)
     return records

@@ -7,7 +7,7 @@ DATASET="cosyn" # cosyn or llava
 SOURCE_ROOT="${DATA_DIR_PUBLIC:-$DATA_DIR}/CoSyn-400K"
 OUTPUT="$WORK_DIR/sft_annotations/cosyn.jsonl"
 MODEL="Qwen3.5-9B" # Use Qwen3.5-4B when GPU resources are limited.
-GPU_ID="5"
+GPU_ID="4"
 LIMIT=2
 MAX_NEW_TOKENS=1536
 # =======================================================

@@ -184,13 +184,22 @@ class CropParser:
         return view
 
 
+
+def source_family(source_path: str) -> str:
+    """Map inspected image namespaces; held-out COCO images stay excluded."""
+    if "/gqa/" in source_path:
+        return "gqa"
+    if "/coco2017/train2017/" in source_path:
+        return "coco2017_train"
+    raise ValueError("unsupported original source image family")
+
+
 def convert_row(row: dict, source_id: str, revision: str, source_split: str) -> dict:
     question, response = row["question"], row["response"]
     path_match = re.search(r'### User Image Path:\*\*\s*"([^"\n]+)"', question)
     if not path_match: raise ValueError("missing original image identity")
     source_path = path_match.group(1)
-    if "/gqa/" not in source_path:
-        raise ValueError("unregistered source task family; requires explicit mapping")
+    family = source_family(source_path)
     query = question[:path_match.start()].replace("<image>", "").strip()
     if question[:path_match.start()].count("<image>") != 1 or not query:
         raise ValueError("requires one original input image and a nonempty query")
@@ -231,16 +240,79 @@ def convert_row(row: dict, source_id: str, revision: str, source_split: str) -> 
     return {"source_id": source_id, "source_revision": revision, "source_split": source_split,
             "task_type": "general_vqa", "query": query, "answer": {"type": "text", "value": match[2].strip()},
             "image": images[0], "events": events, "visual_only_safe": False, "annotation_origin": "derived",
-            "metadata": {"conversion_version": CONVERSION_VERSION, "source_family": "gqa", "source_image_id": Path(source_path).name,
+            "metadata": {"conversion_version": CONVERSION_VERSION, "source_family": family, "source_image_id": Path(source_path).name,
                          "trajectory_origin": "source_teacher_with_static_crop_conversion", "preview_checks": checks,
                          "preview_mae_threshold": MAX_PREVIEW_MAE, "feature_compatibility": "pending",
                          "semantic_trajectory_review": "pending", "visual_only_review": "pending",
                          "source_row_sha256": hashlib.sha256((question + response).encode()).hexdigest()}}
 
 
-def iter_candidates(source_root: Path, limit: int) -> Iterator[dict]:
+
+def task_from_row(row: dict, source_id: str, revision: str, source_split: str) -> dict:
+    """Extract the original task even when source crop replay cannot be trusted.
+
+    Source events are offline evidence only. Multiple crops alone do not establish
+    self-correction: a semantic check must identify an actual error and its repair.
+    """
+    question, response = row["question"], row["response"]
+    if not isinstance(question, str) or not isinstance(response, str):
+        raise ValueError("question and response must be strings")
+    path_match = re.search(r'### User Image Path:\*\*\s*"([^"\n]+)"', question)
+    if not path_match:
+        raise ValueError("missing original source image identity")
+    family = source_family(path_match[1])
+    prefix = question[:path_match.start()]
+    query = prefix.replace("<image>", "").strip()
+    if prefix.count("<image>") != 1 or not query:
+        raise ValueError("requires one original input image and a nonempty query")
+    match = re.fullmatch(r"\s*<think>(.*?)</think>\s*<answer>(.*?)</answer>\s*", response, re.S)
+    if not match or not match[2].strip():
+        raise ValueError("missing complete think/answer structure")
+    images = row.get("image")
+    if not isinstance(images, list) or not images:
+        raise ValueError("missing embedded original image")
+    image = base64.b64decode(images[0], validate=True)
+    with Image.open(io.BytesIO(image)) as decoded:
+        if decoded.getexif().get(274, 1) != 1:
+            raise ValueError("nonidentity EXIF requires coordinate transformation")
+        declared = re.search(r'User Image Size:\*\*\s*"(\d+)x(\d+)"', question)
+        if not declared or decoded.size != (int(declared[1]), int(declared[2])):
+            raise ValueError("declared and embedded original dimensions disagree")
+        decoded.load()
+    metadata = {
+        "conversion_version": "thyme-task-v2", "source_family": family,
+        "source_image_id": Path(path_match[1]).name,
+        "source_row_sha256": hashlib.sha256((question + response).encode()).hexdigest(),
+        "source_response": response,
+        "source_tool_output_count": len(images) - 1,
+        "source_correction": "unverified",
+        "source_trajectory_status": "unverified",
+        "trajectory_origin": "local_teacher_regeneration",
+    }
+    base = {"source_id": source_id, "source_revision": revision, "source_split": source_split,
+            "task_type": "general_vqa", "query": query,
+            "answer": {"type": "text", "value": match[2].strip()},
+            "image": image, "annotation_origin": "derived", "metadata": metadata}
+    try:
+        converted = convert_row(row, source_id, revision, source_split)
+    except (ValueError, TypeError, KeyError, IndexError, OSError, SyntaxError,
+            ZeroDivisionError, OverflowError) as exc:
+        metadata["source_trajectory_status"] = "crop_conversion_failed"
+        metadata["source_trajectory_reject_reason"] = str(exc)
+    else:
+        base["source_events"] = converted["events"]
+        metadata["source_events"] = converted["events"]
+        metadata["source_preview_checks"] = converted["metadata"]["preview_checks"]
+        metadata["source_trajectory_status"] = "crop_replay_passed_semantics_unverified"
+        metadata["source_read_count"] = sum(event["type"] == "visual_read" for event in converted["events"])
+    return base
+
+def _iter_converted(source_root: Path, limit: int, converter,
+                    per_shard_limit: int = 0) -> Iterator[dict]:
     """Scan a stable list of completed parquet files; limit counts inspected source rows."""
     if limit < 0: raise ValueError("limit must be nonnegative (zero means all)")
+    if per_shard_limit < 0:
+        raise ValueError("per_shard_limit must be nonnegative (zero means all)")
     paths = sorted((source_root / "data").glob("*.parquet"))
     if not paths: raise FileNotFoundError("no completed Thyme parquet shards in source_root/data")
     inspected = 0
@@ -254,14 +326,30 @@ def iter_candidates(source_root: Path, limit: int) -> Iterator[dict]:
             parquet = pq.ParquetFile(path)
             row_index = 0
             for batch in parquet.iter_batches(batch_size=1):
+                if per_shard_limit and row_index >= per_shard_limit:
+                    break
                 for row in batch.to_pylist():
                     if limit and inspected >= limit: return
                     source_id = f"{path.name}:{row_index}"
                     inspected += 1; row_index += 1
-                    try: yield convert_row(row, source_id, revision, path.name.split("-000")[0])
+                    try: yield converter(row, source_id, revision, path.name.split("-000")[0])
                     except (ValueError, TypeError, KeyError, IndexError, OSError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
                         yield {"source_id": source_id, "reject_reason": str(exc)}
             if path.stat().st_size != stat.st_size or path.stat().st_mtime_ns != stat.st_mtime_ns:
                 raise RuntimeError(f"source shard changed during reading: {path.name}")
         except (OSError, pa.ArrowInvalid) as exc:
             yield {"source_id": path.name, "reject_reason": f"unreadable parquet: {exc}"}
+
+
+def iter_tasks(source_root: Path, limit: int, per_shard_limit: int = 0) -> Iterator[dict]:
+    """Yield teacher tasks; optional per-shard cap spreads a bounded pilot across files.
+
+    Both limits count inspected rows, including rejected rows. Zero removes that
+    limit. The global limit can stop before all shards have been visited.
+    """
+    yield from _iter_converted(source_root, limit, task_from_row, per_shard_limit)
+
+
+def iter_candidates(source_root: Path, limit: int) -> Iterator[dict]:
+    """Retain the strict source-trajectory conversion entry point."""
+    yield from _iter_converted(source_root, limit, convert_row)

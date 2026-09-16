@@ -4,7 +4,7 @@
 
 ## 1. 配置与启动
 
-在 `WORK_DIR` 下保存私有 `viewer_config.json`，为每个数据集配置名称、JSONL 文件和图片根目录。以下路径为示例，需替换为本机路径；JSON 不展开环境变量。
+配置文件位于 `scripts/sft_data/viewer_config.json`，为每个数据集配置名称、JSONL 文件和图片根目录。当前试制数据保存在 `/archive/public/tmp`，配置中直接记录实际数据路径，不包含 `.env` 中的私密配置或凭据。以下为配置结构示例；JSON 不展开环境变量。
 
 ```json
 {

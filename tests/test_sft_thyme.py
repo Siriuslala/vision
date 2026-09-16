@@ -2,10 +2,16 @@
 import base64
 import io
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from PIL import Image
 
-from data.sft.datasets.thyme import CropParser, convert_row
+from data.sft.datasets.thyme import CropParser, convert_row, task_from_row, source_family, iter_tasks
 
 
 def encoded(image):
@@ -15,6 +21,32 @@ def encoded(image):
 
 
 class ThymeTest(unittest.TestCase):
+    def test_per_shard_sampling_counts_rejections_and_preserves_global_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "data").mkdir()
+            for name in ("2round-00003.parquet", "2round-00012.parquet"):
+                pq.write_table(pa.table({"valid": [False, True, True]}), root / "data" / name)
+            def convert(row, source_id, revision, split):
+                if not row["valid"]:
+                    raise ValueError("fixture rejected row")
+                return {"source_id": source_id}
+            with patch("data.sft.datasets.thyme.task_from_row", side_effect=convert):
+                sampled = list(iter_tasks(root, 0, per_shard_limit=2))
+                self.assertEqual([x["source_id"] for x in sampled], [
+                    "2round-00003.parquet:0", "2round-00003.parquet:1",
+                    "2round-00012.parquet:0", "2round-00012.parquet:1"])
+                self.assertIn("reject_reason", sampled[0])
+                self.assertEqual(len(list(iter_tasks(root, 3, per_shard_limit=2))), 3)
+                self.assertEqual(len(list(iter_tasks(root, 0))), 6)
+            with self.assertRaisesRegex(ValueError, "per_shard_limit"):
+                list(iter_tasks(root, 0, per_shard_limit=-1))
+
+    def test_source_image_namespace_preserves_training_boundary(self):
+        self.assertEqual(source_family("/source/coco2017/train2017/image.jpg"), "coco2017_train")
+        with self.assertRaises(ValueError):
+            source_family("/source/coco2017/val2017/image.jpg")
+
     def test_nested_crop_uses_original_coordinates_and_reference(self):
         parser = CropParser("original.jpg", (100, 50))
         first = parser.parse('p="original.jpg"\na=Image.open(p)\nb=a.crop((10,10,90,40))\nb.save("out.jpg")')
@@ -41,7 +73,16 @@ class ThymeTest(unittest.TestCase):
         self.assertEqual(result["query"], "What color is the object?")
         self.assertEqual(result["answer"], {"type": "text", "value": "red"})
         self.assertFalse(result["visual_only_safe"])
+        task = task_from_row(row, "test:1", "revision", "2round")
+        self.assertNotIn("events", task)
+        self.assertEqual(task["source_events"], result["events"])
+        self.assertEqual(task["metadata"]["source_correction"], "unverified")
+        self.assertEqual(task["metadata"]["source_read_count"], 1)
         row["image"][1] = encoded(Image.new("RGB", (50, 25), "blue"))
+        task = task_from_row(row, "test:1", "revision", "2round")
+        self.assertEqual(task["answer"], result["answer"])
+        self.assertNotIn("source_events", task)
+        self.assertEqual(task["metadata"]["source_trajectory_status"], "crop_conversion_failed")
         with self.assertRaisesRegex(ValueError, "derived image mismatch"):
             convert_row(row, "test:1", "revision", "2round")
 

@@ -1,21 +1,18 @@
-"""Propose ROI trajectories with an offline VLM; proposals require human review."""
+"""Export supplemental ROI proposals; automatic.py provides generation plus checks."""
 from __future__ import annotations
 
 import argparse
 import importlib
 import io
 import json
-import os
 from pathlib import Path
 
 from data.sft.core.annotations import source_key
+from data.sft.tools.local_teacher import LocalTeacher, json_object
 
 
 def parse_proposal(response: str, width: int, height: int) -> list[dict]:
-    text = response.strip()
-    if text.startswith('```'):
-        text = text.split('\n',1)[1].rsplit('```',1)[0].strip()
-    proposal = json.loads(text)
+    proposal = json_object(response)
     events = proposal['events']
     if not isinstance(events,list) or not events or len(events)>24:
         raise ValueError('Expected 1..24 events')
@@ -54,7 +51,7 @@ def main() -> None:
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--model',default='Qwen3.5-9B')
     p.add_argument('--cache-root',type=Path,required=True)
-    p.add_argument('--gpu',default='5')
+    p.add_argument('--gpu',default='4')
     p.add_argument('--limit',type=int,default=2)
     p.add_argument('--max-new-tokens',type=int,default=1536)
     args=p.parse_args()
@@ -66,17 +63,9 @@ def main() -> None:
         p.error('Teacher outputs must be outside source downloads')
     if args.output.exists() or args.output.with_suffix('.raw.jsonl').exists():
         p.error('Output exists')
-    os.environ.update(CUDA_VISIBLE_DEVICES=args.gpu,CUDA_DEVICE_ORDER='PCI_BUS_ID',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
-    import torch
     from PIL import Image
-    from transformers import AutoProcessor, AutoModelForImageTextToText, set_seed
-    from eva.inference import resolve_model
-    if not torch.cuda.is_available():
-        raise RuntimeError('CUDA unavailable for local teacher')
-    set_seed(0)
-    model_path=resolve_model(args.model,args.cache_root)
-    processor=AutoProcessor.from_pretrained(model_path,local_files_only=True)
-    model=AutoModelForImageTextToText.from_pretrained(model_path,local_files_only=True,dtype=torch.bfloat16,device_map='auto',attn_implementation='sdpa').eval()
+    teacher = LocalTeacher(args.model,args.cache_root,args.gpu)
+    model_path = teacher.info['snapshot']
     adapter=importlib.import_module('data.sft.datasets.'+args.dataset)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     proposed_count = 0
@@ -96,19 +85,12 @@ def main() -> None:
                     'Do not claim access to hidden data, code or a solver. Use at most 4 reads. '
                     'Do not output a finish event or final answer field. Question: '+base['query'])
             # The source answer is intentionally withheld from proposal generation.
-            chat=[{'role':'user','content':[{'type':'image'},{'type':'text','text':prompt}]}]
-            text=processor.apply_chat_template(chat,tokenize=False,add_generation_prompt=True, **({'enable_thinking': False} if model.config.model_type == 'qwen3_5' else {}))
-            inputs=processor(text=[text],images=[image],return_tensors='pt').to(model.device)
-            with torch.inference_mode():
-                generated=model.generate(**inputs,max_new_tokens=args.max_new_tokens,do_sample=False)
-            tokens=generated[0,inputs['input_ids'].shape[1]:]
-            response=processor.decode(tokens,skip_special_tokens=True)
+            result = teacher.generate([image],prompt,args.max_new_tokens)
+            response = result['response']
             key=source_key(base['source_id'],base['query'],base['answer'],base['image'])
-            raw={'source_key':key,'source_id':base['source_id'],'response':response,'model_path':str(model_path),'prompt':prompt,'generated_tokens':len(tokens)}
-            eos=model.generation_config.eos_token_id
-            eos=set(eos if isinstance(eos,list) else [eos])
+            raw={**result,'source_key':key,'source_id':base['source_id'],'model_path':str(model_path)}
             try:
-                if not any(token in eos for token in tokens.tolist()):
+                if result['finish_reason']!='eos':
                     raise ValueError('Teacher output truncated without EOS')
                 events=parse_proposal(response,*image.size)
                 annotation={'source_key':key,'status':'proposed','reviewer':None,'events':events,'visual_only_safe':False,'visual_only_basis':'','teacher':{'model':str(model_path),'seed':0,'max_new_tokens':args.max_new_tokens},'source_answer_withheld':True}

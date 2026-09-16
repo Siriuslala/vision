@@ -1,5 +1,6 @@
 """Batched offline Hugging Face inference shared by simple_test and evaluation."""
 import argparse
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -11,8 +12,11 @@ from data.prepare_data import snapshot
 from utils.project_paths import load_paths
 from eva.benchmark import load_cases, parse_ids, prompt_for, score, summarize
 from eva.inputs import load_image_prompts, summarize_inputs
+from eva.progress import GenerationProgress
+from eva.decoding import add_decoding_arguments, generation_kwargs, pending_batches, sampling_seed
 
-MODELS = ['Qwen3.5-4B', 'Qwen3.5-9B', 'Qwen3-VL-4B-Instruct', 'Qwen3-VL-8B-Instruct']
+MODELS = ['Qwen3.5-4B', 'Qwen3.5-9B', 'Qwen3-VL-4B-Instruct', 'Qwen3-VL-8B-Instruct',
+          'Qwen3-VL-4B-Thinking', 'Qwen3-VL-8B-Thinking']
 
 
 def positive(value):
@@ -54,6 +58,7 @@ def parser(full=False):
     p.add_argument('--attn-implementation', choices=['sdpa', 'eager', 'flash_attention_2'], default='sdpa')
     p.add_argument('--seed', '--random-seed', '--random_seed', dest='seed', type=int, default=0,
                    help='Random seed for Python, NumPy, and PyTorch CPU/CUDA RNGs (default: 0)')
+    add_decoding_arguments(p)
     p.add_argument('--resume', action='store_true', help='Resume only with exactly matching run configuration')
     p.add_argument('--dry-run', action='store_true', help='Validate inputs and write prompts without loading model weights')
     return p
@@ -119,7 +124,9 @@ def main(full=False):
     config = {k: v for k, v in vars(args).items()
               if k not in ('resume', 'output', 'case_ids', 'image_paths', 'prompts')}
     config.update(model_path=str(model_path), selected_ids=[r[id_key] for r in rows],
-                  prompt_version=1, decoding='greedy')
+                  prompt_version=1, decoding='sampling' if args.do_sample else 'greedy',
+                  generation=generation_kwargs(args),
+                  seed_policy='original_batch_sha256_v1' if args.do_sample else 'run_seed')
     if full:
         config['manifest_sha256'] = hashlib.sha256(manifest.read_bytes()).hexdigest()
     else:
@@ -152,7 +159,7 @@ def main(full=False):
     if not args.dry_run:
         import torch
         import transformers
-        from transformers import AutoProcessor, AutoModelForImageTextToText, set_seed
+        from transformers import AutoProcessor, AutoModelForImageTextToText, StoppingCriteriaList, set_seed
         if gpu != 'cpu' and not torch.cuda.is_available():
             raise RuntimeError('CUDA unavailable. Check GPU access/driver; use --gpu-ids cpu only for deliberate CPU inference.')
         set_seed(args.seed)
@@ -171,16 +178,29 @@ def main(full=False):
             model_path, local_files_only=True, dtype=dtype,
             device_map='cpu' if gpu == 'cpu' else 'auto',
             attn_implementation=args.attn_implementation).eval()
+        parameter_devices = {}
+        for parameter in model.parameters():
+            device = str(parameter.device)
+            parameter_devices[device] = parameter_devices.get(device, 0) + parameter.numel()
+        print(f'Model parameter placement: {parameter_devices}', flush=True)
+        if gpu != 'cpu' and any(device == 'cpu' for device in parameter_devices):
+            print('WARNING: model parameters are on CPU; CPU execution/offload can severely slow generation.', flush=True)
+        effective_generation = deepcopy(model.generation_config)
+        effective_generation.update(**generation_kwargs(args))
         meta = json.loads(meta_path.read_text())
         meta['runtime'] = {'torch': torch.__version__, 'transformers': transformers.__version__,
                            'devices': {str(k): str(v) for k, v in getattr(model, 'hf_device_map', {}).items()},
-                           'image_processor': processor.image_processor.to_dict()}
+                           'image_processor': processor.image_processor.to_dict(),
+                           'generation_config': effective_generation.to_dict(),
+                           'parameter_devices': parameter_devices,
+                           'gpu_names': [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]}
         write_json(meta_path, meta)
     with output.open('a', encoding='utf-8') as handle:
-        for start in range(0, len(remaining), args.batchsize):
-            batch = remaining[start:start + args.batchsize]
+        for batch_index, batch in pending_batches(rows, done, id_key, args.batchsize, args.do_sample):
+            batch_seed = sampling_seed(args.seed, batch_index) if args.do_sample else args.seed
             prompts = [prompt_for(row, args.bench) if full else row['prompt'] for row in batch]
             started = time.perf_counter()
+            generation_metrics = {}
             if args.dry_run:
                 responses = [''] * len(batch)
                 token_counts = [0] * len(batch)
@@ -200,8 +220,12 @@ def main(full=False):
                                                         **template_kwargs) for chat in chats]
                 inputs = processor(text=texts, images=images, padding=True, return_tensors='pt')
                 inputs = inputs.to(model.device)
-                with torch.inference_mode():
-                    generated = model.generate(**inputs, max_new_tokens=args.max_new_tokens, do_sample=False)
+                if args.do_sample:
+                    set_seed(batch_seed)
+                with torch.inference_mode(), GenerationProgress(inputs['input_ids'].shape[1], len(batch)) as progress:
+                    generated = model.generate(**inputs, **generation_kwargs(args),
+                                               stopping_criteria=StoppingCriteriaList([progress]))
+                generation_metrics = progress.metrics()
                 suffix = generated[:, inputs['input_ids'].shape[1]:]
                 responses = processor.batch_decode(suffix, skip_special_tokens=True, clean_up_tokenization_spaces=False)
                 eos = model.generation_config.eos_token_id
@@ -213,13 +237,17 @@ def main(full=False):
                     finishes.append('eos' if stop is not None else 'length')
             elapsed = time.perf_counter() - started
             for row, prompt, response, count, finish in zip(batch, prompts, responses, token_counts, finishes):
+                if row[id_key] in done:
+                    continue
                 result = ({key: row.get(key) for key in ('taskId', 'type', 'subtype', 'ansType')}
                           if full else {'sample_id': row['sample_id'], 'image_path': row['image_path']})
                 if full:
                     result.update(benchmark=args.bench, image=row['image_path'])
                 result.update(model=args.model,
                               prompt=prompt, response=response, generated_tokens=count, finish_reason=finish,
-                              batch_seconds=elapsed, batch_size=len(batch))
+                              batch_seconds=elapsed, batch_size=len(batch), random_seed=args.seed,
+                              batch_seed=batch_seed, decoding=config['decoding'],
+                              generation_metrics=generation_metrics)
                 if full:
                     result['score'] = (score(row, response, args.bench) if not args.dry_run else
                                        {'prediction': None, 'reference': None, 'correct': None, 'metric': 'dry_run'})

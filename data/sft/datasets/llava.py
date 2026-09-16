@@ -58,6 +58,27 @@ def extract_answer(response: str, query: str) -> tuple[dict, str]:
     return {'type':'text','value':value}, method
 
 
+
+def requires_instance_annotations(query: str, subset: str, task_type: str) -> bool:
+    """Conservatively route direct image counting to the instance-annotation path.
+
+    Chart/table quantities and geometric measures have different supervision.
+    CLEVR-Math hypothetical addition/removal still uses its arithmetic task path;
+    direct counting in the same source must not inherit that exception.
+    """
+    if not re.search(r"\bhow many\b|\b(?:count|number of)\s+(?:the\s+|all\s+)?", query, re.I):
+        return False
+    hypothetical = subset == "CLEVR-Math(MathV360K)" and re.search(
+        r"\b(?:add|remove|subtract|take away|put in|get rid of)\b", query, re.I)
+    if hypothetical:
+        return False
+    if task_type in {"chart_qa", "table_qa"}:
+        return False
+    if re.search(r"\bhow many\s+(?:degrees|radians|centimeters|millimeters|meters|units)\b", query, re.I):
+        return False
+    return True
+
+
 def convert_task(row: dict, shard: str, revision: str) -> dict:
     subset = row.get('data_source')
     if not isinstance(subset, str) or not subset:
@@ -87,7 +108,7 @@ def convert_task(row: dict, shard: str, revision: str) -> dict:
         raise ValueError('empty_query_or_source_id')
     answer, method = extract_answer(response,query)
     task_type = 'captioning' if method == 'source_caption' else TASKS[subset]
-    if subset == 'IconQA(MathV360K)' and re.search(r'\bhow many\b', query, re.I):
+    if requires_instance_annotations(query, subset, task_type):
         raise ValueError('counting_requires_reviewed_point_or_bbox_instance_metadata')
     return {'source_id':f'{subset}/{row["id"]}/turn0', 'source_split':split,
             'source_revision':revision, 'task_type':task_type, 'query':query,

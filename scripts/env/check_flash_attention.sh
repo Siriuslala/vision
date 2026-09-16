@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run from the repository root after configuring .env:
-# bash scripts/check_flash_attention.sh
+# bash scripts/env/check_flash_attention.sh
 set -euo pipefail
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/load_env.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/load_env.sh"
 
 # Configuration: choose a GPU with free memory for a small kernel test.
 GPU_ID="3"

@@ -108,14 +108,45 @@ def mask_candidate(mask, positive: list[float], negatives: list[list[float]], sc
     return {"status": "pending", "box": [xmin, ymin, xmax+1, ymax+1], "score": score}
 
 
+def select_mask_candidate(rounds: list[dict], minimum_score: float = 0.8,
+                          minimum_box_iou: float = 0.85) -> dict:
+    """Choose geometrically consistent masks for a separate semantic teacher check."""
+    winners = []
+    for record in rounds:
+        valid = [c for c in record["candidates"] if c["status"] == "pending"
+                 and c.get("score", 0) >= minimum_score and c.get("box")]
+        if not valid:
+            return {"status": "rejected", "reason": "no_mask_passes_point_and_score_checks"}
+        winners.append(max(valid, key=lambda c: c["score"]))
+    if not winners:
+        return {"status": "rejected", "reason": "no_prompt_rounds"}
+    a = winners[0]["box"]
+    for winner in winners[1:]:
+        b = winner["box"]
+        intersection = max(0, min(a[2], b[2])-max(a[0], b[0])) * max(0, min(a[3], b[3])-max(a[1], b[1]))
+        union = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - intersection
+        if not union or intersection / union < minimum_box_iou:
+            return {"status": "rejected", "reason": "box_changes_with_negative_prompt"}
+    return {"status": "requires_semantic_verification", "box": winners[-1]["box"],
+            "mask_file": winners[-1].get("mask_file"), "score": winners[-1]["score"],
+            "minimum_score": minimum_score, "minimum_box_iou": minimum_box_iou}
+
+
 class Sam3LocalBackend:
     """Use the installed Transformers SAM3 Tracker interface, local files only."""
-    def __init__(self, checkpoint: Path, device: str = "cpu"):
-        if not checkpoint.is_dir():
+    def __init__(self, checkpoint: str | Path = "facebook/sam3", device: str = "cpu"):
+        from huggingface_hub import snapshot_download
+        if Path(checkpoint).is_absolute() and not Path(checkpoint).is_dir():
             raise FileNotFoundError("SAM3 local checkpoint directory does not exist")
+        checkpoint = Path(checkpoint) if Path(checkpoint).is_dir() else Path(
+            snapshot_download(str(checkpoint), local_files_only=True))
+        self.checkpoint = checkpoint
         from transformers import Sam3TrackerModel, Sam3TrackerProcessor, AutoConfig
-        if AutoConfig.from_pretrained(checkpoint, local_files_only=True).model_type != "sam3_tracker":
-            raise ValueError("Checkpoint must contain the SAM3 tracker architecture")
+        config = AutoConfig.from_pretrained(checkpoint, local_files_only=True)
+        if config.model_type not in {"sam3_tracker", "sam3_video"}:
+            raise ValueError("Checkpoint must contain SAM3 tracker or video weights")
+        # Transformers explicitly extracts tracker_config and tracker_model weights
+        # from the official video checkpoint; loading diagnostics remain strict.
         self.processor = Sam3TrackerProcessor.from_pretrained(checkpoint, local_files_only=True)
         self.model, loading = Sam3TrackerModel.from_pretrained(checkpoint, local_files_only=True, output_loading_info=True)
         if any(loading.get(key) for key in ("missing_keys", "mismatched_keys", "error_msgs")):
@@ -156,25 +187,28 @@ class Sam3LocalBackend:
                         record["mask_file"] = filename
                         candidates.append(record)
                     round_records.append({"positive": point, "negative_point_indices": negative_ids, "candidates": candidates})
+                selection = select_mask_candidate(round_records)
                 result.append({"point_index": index, "status": "pending", "rounds": round_records,
+                               "automatic_selection": selection,
                                "semantic_and_prompt_consistency_review": "required"})
         return result
 
 
 def propose(audit_dir: Path, image_cache: Path, output_root: Path, *, method: str,
-            regular_compact: bool = False, checkpoint: Path | None = None, device: str = "cpu", limit: int = 3) -> None:
+            regular_compact: bool = False, checkpoint: str | Path | None = None, device: str = "cpu", limit: int = 3) -> None:
     if output_root.exists() and any(output_root.iterdir()):
         raise ValueError("Proposal output must be empty; source audits are never overwritten")
     if method not in {"geometry", "sam3"}:
         raise ValueError("Unknown proposal method")
-    backend = Sam3LocalBackend(checkpoint or Path("/__missing_sam3__"), device) if method == "sam3" else None
+    backend = Sam3LocalBackend(checkpoint or "facebook/sam3", device) if method == "sam3" else None
     config = {"version": "point-windows-v1", "method": method, "regular_compact": regular_compact,
               "ratios": [0.6, 0.8, 1.0], "neighbors": 3, "thresholds": [25, 30, 35],
               "point_rasterization": "floor", "checkpoint_files": {}}
     if method == "sam3":
         import transformers
-        config["sam3"] = {"transformers": transformers.__version__, "backend": "Sam3TrackerModel", "initial_negatives": 3, "review_negatives": 4, "multimask_output": True, "mask_threshold": 0.0, "binarize": True}
-    if checkpoint:
+        config["sam3"] = {"transformers": transformers.__version__, "backend": "Sam3TrackerModel", "initial_negatives": 3, "review_negatives": 4, "multimask_output": True, "mask_threshold": 0.0, "binarize": True, "selection_minimum_score": 0.8, "selection_minimum_box_iou": 0.85}
+    if backend:
+        checkpoint = backend.checkpoint
         config["checkpoint_files"] = {p.relative_to(checkpoint).as_posix(): file_sha256(p)
             for p in sorted(checkpoint.rglob("*")) if p.is_file() and not p.name.startswith(".")}
     config_id = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
@@ -219,7 +253,7 @@ def main() -> None:
         parser.add_argument("--" + field, type=Path, required=True)
     parser.add_argument("--method", choices=("geometry", "sam3"), default="geometry")
     parser.add_argument("--regular-compact", action="store_true")
-    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--checkpoint", default="facebook/sam3")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--limit", type=int, default=3)
     args = parser.parse_args()

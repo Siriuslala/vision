@@ -6,7 +6,7 @@ import unittest
 
 from PIL import Image
 
-from data.sft.datasets.visual_cot import candidate_from_record, iter_candidates, _relative
+from data.sft.datasets.visual_cot import candidate_from_record, iter_candidates, iter_tasks, _relative
 
 
 class VisualCotTests(unittest.TestCase):
@@ -33,6 +33,17 @@ class VisualCotTests(unittest.TestCase):
         record = build_records(result, "visual_cot", self.root / "exported", self.root)[0]
         validate_record(record, self.root)
         self.assertEqual(record["provenance"]["annotation_origin"], "derived")
+
+    def test_teacher_task_preserves_individual_boxes_without_assuming_a_trajectory(self):
+        meta = self.root / "metadata"
+        meta.mkdir()
+        (meta / "gqa_cot_train.jsonl").write_text(json.dumps(self.record) + "\n")
+        task = list(iter_tasks(self.root, 1))[0]
+        self.assertEqual(task["source_boxes"], self.record["bboxs"])
+        self.assertNotIn("events", task)
+        self.assertNotIn("visual_only_safe", task)
+        self.assertEqual(task["metadata"]["source_thought"], self.record["thought"])
+        self.assertEqual(task["metadata"]["source_box_order"], "unverified")
 
     def test_source_out_of_bounds_rejected_without_clipping(self):
         self.record["bboxs"] = [[0, 100, 500, 376]]

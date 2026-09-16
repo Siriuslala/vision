@@ -25,24 +25,26 @@ Bash entry points load configuration through `scripts/load_env.sh`. Direct Pytho
 
 | Script | Purpose and configuration | Launch command from the repository root |
 | --- | --- | --- |
-| `scripts/setup_env.sh` | Install the locked environment | `bash scripts/setup_env.sh` |
-| `scripts/simple_test.sh` | Configure one model and paired image/prompt lists | `bash scripts/simple_test.sh` |
-| `scripts/evaluation.sh` | Configure full-benchmark or subset evaluation | `bash scripts/evaluation.sh` |
-| `scripts/smoke_models.sh` | Run paired image/prompt lists on a model array sequentially | `bash scripts/smoke_models.sh` |
-| `scripts/prepare_data.sh` | Configure the dataset source and export destination | `bash scripts/prepare_data.sh` |
-| `scripts/download.sh` | 配置 Hugging Face 数据集名称、保存路径及下载参数 | `bash scripts/download.sh` |
-| `scripts/validate_data.sh` | Configure the dataset and directory to validate | `bash scripts/validate_data.sh` |
-| `scripts/check.sh` | Check Bash syntax, unit tests, and Python CLIs | `bash scripts/check.sh` |
+| `scripts/env/setup_env.sh` | Install the locked environment | `bash scripts/env/setup_env.sh` |
+| `scripts/eva/simple_test.sh` | Configure one model and paired image/prompt lists | `bash scripts/eva/simple_test.sh` |
+| `scripts/eva/evaluation.sh` | Configure full-benchmark or subset evaluation | `bash scripts/eva/evaluation.sh` |
+| `scripts/eva/smoke_models.sh` | Run paired image/prompt lists on a model array sequentially | `bash scripts/eva/smoke_models.sh` |
+| `scripts/data/prepare_data.sh` | Configure the dataset source and export destination | `bash scripts/data/prepare_data.sh` |
+| `scripts/data/download.sh` | 配置 Hugging Face 数据集名称、保存路径及下载参数 | `bash scripts/data/download.sh` |
+| `scripts/data/validate_data.sh` | Configure the dataset and directory to validate | `bash scripts/data/validate_data.sh` |
+| `scripts/testing/check.sh` | Check Bash syntax, unit tests, and Python CLIs | `bash scripts/testing/check.sh` |
+
+Bash 入口按用途组织：`scripts/data/` 为数据下载、导出与验证，`scripts/eva/` 为推理、评测、诊断和结果查看，`scripts/env/` 为环境安装和内核检查，`scripts/testing/` 为项目测试，`scripts/sft_data/` 为 SFT 数据流程。`scripts/` 根目录仅保留共享的 `load_env.sh` 和 `decoding_presets.sh`。
 
 For example, from the repository root:
 
 ```bash
-bash scripts/simple_test.sh
+bash scripts/eva/simple_test.sh
 ```
 
 ## Configuring experiments in Bash
 
-Edit the configuration section in `scripts/simple_test.sh`:
+Edit the configuration section in `scripts/eva/simple_test.sh`:
 
 ```bash
 MODEL="Qwen3.5-4B"
@@ -82,6 +84,23 @@ Simple test passes each prompt unchanged into the model's chat template. It does
 
 `MAX_PIXELS=""` preserves the model processor's image-resolution settings. Setting a numeric limit changes the visual input budget; keep it consistent when comparing models. `DRY_RUN=true` validates cases and prompts without loading weights. Use a separate output file for dry runs.
 
+## 解码配置
+
+`scripts/eva/evaluation.sh`、`scripts/eva/simple_test.sh` 和 `scripts/eva/smoke_models.sh` 通过 `scripts/decoding_presets.sh` 根据 `MODEL` 和 `THINKING` 自动选择采样参数。Qwen3.5 的 `on` 使用 thinking general 配置，`off` 使用 non-thinking reasoning 配置；`default` 按模型默认解析为 `on`。Qwen3-VL Instruct 使用 `off`，Thinking checkpoint 使用 `on`，两者也接受 `default` 自动匹配权重类型；冲突配置会报错。
+
+| 模型及模式 | temperature | top-p | top-k | min-p | repetition penalty |
+| --- | --- | --- | --- | --- | --- |
+| Qwen3.5 Thinking | 1.0 | 0.95 | 20 | 0.0 | 1.0 |
+| Qwen3.5 Non-thinking reasoning | 1.0 | 1.0 | 40 | 0.0 | 1.0 |
+| Qwen3-VL Instruct，VL 配置 | 0.7 | 0.8 | 20 | 0.0 | 1.0 |
+| Qwen3-VL Thinking，VL 配置 | 1.0 | 0.95 | 20 | 0.0 | 1.0 |
+
+上述预设均启用 sampling，覆盖当前支持的 4B/8B Qwen3-VL 和 4B/9B Qwen3.5。生成长度仍由 Bash 顶部的 `MAX_NEW_TOKENS` 独立控制。Qwen3-VL 截图未指定 min-p，项目显式禁用该筛选。`presence_penalty` 因 Transformers 原生生成接口不支持而省略，不用重复惩罚替代。Python CLI 保留手动解码参数，未指定 `--do-sample` 时使用 greedy。
+
+所有解码参数及实际生成配置写入 `.meta.json`，每条预测记录解码模式、实验 seed 和 batch seed。采样按原始 batch 编号派生独立 seed；恢复时保留原始 batch 划分，部分写入的 batch 会重新生成完整 batch，仅追加缺失记录。相同环境、输入和 batch size 下，此策略避免恢复过程改变采样随机数序列；它不保证不同硬件或计算后端间的逐位一致。参数或 batch size 变更需要新的输出文件；缺少新增解码配置的旧 metadata 无法直接恢复。
+
+实验协议、参数含义和 Qwen3.5 官方配置的适用范围见 [评测解码协议](docs/evaluation_decoding.md)。
+
 ## Generation length
 
 Earlier tests with a 512-token limit sometimes stopped before producing a final answer. The three inference Bash scripts and the Python CLI therefore default to **4096 new tokens**. This is an initial budget informed by those observations, not a verified guarantee that every case will finish.
@@ -92,7 +111,7 @@ Earlier tests with a 512-token limit sometimes stopped before producing a final 
 - If many cases still have `finish_reason="length"`, inspect their responses and consider a larger consistent budget. Long output can also reflect repeated reasoning or loops.
 - Keep generation and image budgets consistent across model comparisons. Report truncation counts and do not treat the earlier 128/512-token interface checks as benchmark performance estimates.
 
-`THINKING` affects the two supported Qwen3.5 models. The Qwen3-VL Instruct checkpoints do not implement this switch. Qwen3.5 currently uses the PyTorch reference implementation of linear attention, without the optional `causal_conv1d` and `flash-linear-attention` acceleration packages; long generation may be slow.
+`THINKING` affects the two supported Qwen3.5 models. The Qwen3-VL Instruct checkpoints do not implement this switch. Qwen3.5 uses the installed `flash-linear-attention` kernels for Gated DeltaNet. The separate causal convolution kernels require a compatible `causal-conv1d` wheel; without it, convolution uses the PyTorch reference implementation.
 
 ## Simple-test outputs and resuming
 
@@ -102,10 +121,10 @@ The companion metadata file records model and generation settings, ordered image
 
 ## Full evaluation, outputs, and resuming
 
-Set `MODEL`, `GPU_IDS`, `OUTPUT_FILE`, and other parameters in `scripts/evaluation.sh`. Leave `CASE_IDS=()` for the full benchmark, then run:
+在 `scripts/eva/evaluation.sh` 顶部设置 `MODEL`、`GPU_IDS`、`OUTPUT_DIR`、`OUTPUT_PREFIX` 和生成参数。输出文件名由前缀及 `thinking`、`random_seed`、`do_sample`、`temperature`、`top_p`、`top_k`、`min_p`、`repetition_penalty` 自动拼接，格式为 `<prefix>-thinking<value>-random_seed<value>-...jsonl`。模型前缀根据模型名称和 benchmark 自动生成；其他影响实验的配置仍完整保存在 metadata 中。`ATTN_IMPLEMENTATION="flash_attention_2"` 启用 FlashAttention 2。保留 `CASE_IDS=()` 选择完整 benchmark，然后运行：
 
 ```bash
-bash scripts/evaluation.sh
+bash scripts/eva/evaluation.sh
 ```
 
 After an interruption, change `RESUME=false` to `RESUME=true` in the same script, keep the other settings unchanged, and run the same command. Model paths, parameters, selected cases, and the manifest hash must match. If you change the generation budget, choose a new output file; results from different configurations are not merged during resumption.
@@ -116,19 +135,69 @@ Each run produces:
 - `*.jsonl.meta.json`: configuration, model snapshot, manifest hash, dependency versions, device mapping, and processor configuration.
 - `*.jsonl.summary.json`: accuracy, unparsed answers, truncations, and breakdowns by category, subtype, and answer type.
 
+生成开始时输出 batch size 和 padding 后的输入 token 数。生成过程中每 15 秒输出一次状态：首 token 返回前显示等待状态，之后显示已完成的 decode 步数和平均步速。计时信息保存在每条预测的 `generation_metrics` 中；batch size 大于 1 时，步数不等于所有样本的 token 总数。首 token 延迟包含 prefill 和可能的首次 kernel 编译开销。加载完成后同时打印各设备上的参数数量，用于识别 CPU 放置。
+
+排查速度时，先在 `scripts/eva/diagnose_inference.sh` 顶部选择空闲 GPU 和短生成预算，再运行 `bash scripts/eva/diagnose_inference.sh`。诊断使用两条 BabyVision 样本，日志及结果写入 `WORK_DIR/diagnostics/` 的独立目录。短生成结果只用于性能诊断，不能作为 benchmark 分数。
+
 Each record is flushed after writing; summaries are updated after each batch. Existing output files are protected from accidental overwrites. Malformed JSONL produces an error rather than being silently skipped. `batch_seconds` measures an entire batch and should not be summed once per case within that batch.
 
 Model inputs contain only the image, question, and options. Reference answers and dataset CoT annotations are excluded. Local strict scoring preferentially extracts `Final answer: ...`. Multiple-choice predictions must be valid option letters. Blank answers are normalized only for Unicode, whitespace, case, and trailing periods; unparsed answers count as incorrect. Semantically equivalent text can fail strict matching, so inspect raw responses. This differs from the [official LLM-judge evaluation](https://github.com/UniPat-AI/BabyVision/tree/main/babyvision_eval).
 
+## 推理结果查看网页
+
+编辑 `scripts/eva/viewer.sh` 顶部参数后运行：
+
+```bash
+bash scripts/eva/viewer.sh
+```
+
+默认地址为 `http://127.0.0.1:1044`。服务器部署时可使用 SSH 端口转发：在本地终端执行 `ssh -L 1044:127.0.0.1:1044 <server>`，然后在本地浏览器打开上述地址。
+
+- `JSONL_FILES`：结果文件列表，默认选择 `WORK_DIR/eval/*.jsonl`。每行需要 `taskId` 或 `sample_id`、字符串 `response`，以及 `image` 或 `image_path`。
+图像直接读取结果行的 `image_path`，兼容 `image` 字段，无需配置图像根目录。绝对路径直接使用，相对路径以对应 JSONL 所在目录为基准；仅在图像字段来自可选 manifest 时，相对路径以 manifest 所在目录为基准。网页通过运行和样本索引访问已配置记录的图像，浏览器不能指定任意文件路径。
+- `MANIFEST`：默认空字符串。结果 JSONL 已包含问题、答案和参考推理时无需设置；可选提供 BabyVision `train.jsonl`，仅按 `taskId` 补充结果文件中缺失的参考字段，不覆盖已有内容。
+- `HOST` / `PORT`：监听地址和端口。
+
+问题优先读取结果行的 `question`，否则回退到 `prompt`；参考答案支持 `reference`、`reference_answer`、`ground_truth`、`answer`、`blankAns`、`choiceAns` 和 `score.reference`。参考推理支持 `reference_reasoning`、`coT`、`cot`、`CoT`、`rationale`、`solution`；`reasoning`／`reasoning_content` 按模型推理展示在右侧。缺失参考推理时隐藏对应区块，缺失答案时显示未提供。
+
+左侧展示图像、问题、参考答案和可展开的参考推理；右侧展示模型输出、独立保存的模型 reasoning、评分和停止原因。桌面端两列独立滚动，图像支持放大。网页支持运行切换、样本 ID／问题搜索、正确／错误／未评分／截断筛选、原文查看和复制。
+
+模型输出通过本地 Markdown 渲染，保留普通换行，支持标题、列表、表格、引用和代码块；原始 HTML 按文本显示。`Plain text` 可查看原文，`Decode literal \n` 用于显示双重转义的换行，默认关闭以保留原始反斜杠含义。不自动补全未保存的 reasoning，也不将参考推理标记为模型推理。数学 LaTeX 命令保留为文本，未启用数学排版引擎。
+
+`Reload files` 重新读取已配置的文件，适合查看运行中已写入的结果；增加新的文件路径需要修改 Bash 配置并重启。损坏 JSONL、重复 ID、丢失图像均明确报错。结果源文件保持只读，网页静态资源在 `eva/viewer/static/`，不依赖 CDN。
+
 ## Hugging Face 数据集下载
 
-在 `scripts/download.sh` 顶部设置 `REPO_ID`、`LOCAL_DIR`、`REVISION`、并发数和超时，然后执行 `bash scripts/download.sh`。默认下载 `allenai/pixmo-count` 到 `.env` 中 `DATA_DIR` 下的 `pixmo-count` 目录。机器相关路径保存在 `.env`。
+编辑 `scripts/data/download.sh` 顶部的数据集名称和保存目录，然后运行：
 
-Bash 入口继承环境中的 `HF_ENDPOINT`、`http_proxy` 和 `https_proxy`；也可在私有 `.env` 中显式配置这些变量，由 `scripts/load_env.sh` 导出。非交互式 Shell 不保证执行 `.bashrc` 中的代理配置。从任务运行器启动下载时，可通过 `.env` 保证网络设置生效。镜像地址控制 Hub API 入口，实际文件下载仍可能被重定向到其他存储域名。
+```bash
+bash scripts/data/download.sh
+```
 
-下载默认使用普通 HTTP，避免 `hf-xet` 的 CAS 响应解码故障；`USE_XET=true` 可启用 Xet。临时 HTTP 网络错误和部分服务端错误最多尝试 `ATTEMPTS` 次，最终失败保留异常并返回非零状态。重复运行可复用已完成文件及目标目录下的 `.cache/huggingface` 元数据；未完成文件能否续传取决于 Hub 版本和下载后端，不保证跨进程续传。下载入口使用项目锁定的 uv 环境。
+大型共享数据集使用 `.env` 中的 `DATA_DIR_PUBLIC`。下载文件与续传状态均保存在 `LOCAL_DIR`，不在 home、`/tmp` 或共享模型缓存中额外保存数据副本。环境沿用 `uv run --frozen`。归档文件系统的透明压缩会影响 `du -sh`；程序显示逻辑字节数。
 
-`snapshot_download` 下载仓库文件。PixMo-Count 的 Parquet 包含图片 URL 和标注，图片需根据 `image_url` 另行下载，并可通过 `image_sha256` 校验。比较下载大小时使用 `du -sb` 或文件字节数；`du -sh` 显示磁盘占用，在支持压缩的文件系统上可能更小。
+| 参数 | 含义 |
+| --- | --- |
+| `REPO_ID`、`LOCAL_DIR` | 数据集 ID 与绝对保存路径 |
+| `REVISION` | 首次解析为固定 commit；再次运行继续该 commit，不自动追随 `main` 更新 |
+| `MAX_WORKERS=2` | 同时下载的文件数；多个终端的并发数会累加 |
+| `RANGE_MIB=64` | 每次 HTTP Range 请求的大小；每次都从 Hub resolver 获取地址 |
+| `DOWNLOAD_TIMEOUT=120` | 网络读取无响应的超时秒数，不是整个文件的下载时间上限 |
+| `ETAG_TIMEOUT=60` | 首次获取仓库清单的超时秒数 |
+| `ATTEMPTS=10` | 单文件连续失败上限；一次 Range 请求成功后计数归零 |
+| `ENDPOINT=""` | 继承 `HF_ENDPOINT`；可设置官方 `https://huggingface.co` 经代理下载 |
+| `IMPORT_HTTP_PARTIALS=true` | 迁入已停止的旧 HTTP 下载器留下的临时文件；Xet 或来源不明的临时文件必须设为 `false` |
+| `DRY_RUN=false` | 设为 `true` 时固定清单、校验已有文件并按配置迁入旧临时文件，不传输数据文件内容 |
+
+Bash 入口加载私有 `.env` 并导出 `HF_ENDPOINT`、`http_proxy`、`https_proxy`。沿用服务器提供的镜像、代理和包缓存配置。镜像限流或持续返回过期链接时，可将下载脚本的 `ENDPOINT` 设置为官方地址；代理仍从 `.env` 继承。下载采用 HTTP 顺序写入，不依赖 `hf-transfer` 或 Xet 分块缓存。
+
+网络中断、CDN 签名过期和重试耗尽均保留 `.download-state/partials/` 下的连续字节前缀。再次运行时从其长度发起 Range 请求。服务器忽略 Range、返回错误范围、权限不足或校验失败时明确报错，已有字节保留待检查。首次迁移已有完整文件会读取磁盘核验 SHA256（LFS 文件）或 Git blob SHA1（普通文件）；以后文件大小和修改时间未变时复用校验记录。新文件全部下载并校验成功后才出现在正式路径，可在其余分片下载期间读取。
+
+首次迁移前停止旧下载进程。`IMPORT_HTTP_PARTIALS=true` 按远端内容 hash 匹配旧 `.cache/huggingface/download/` 临时文件，重命名最长匹配文件以避免复制大文件；其他残留不自动删除。已被旧库删除的字节无法恢复。进度条包含完整文件和可恢复的临时文件，启动时分别报告已校验字节、未校验字节与固定总量。
+
+同一目录只允许一个本下载器运行；不同目录可并行下载。Ctrl+C 或 SIGTERM 请求停止，等待当前网络读取返回或超时后退出；SIGKILL 无法执行最后一次磁盘同步。移动数据集时包含整个 `.download-state`，保持仓库 ID 和 `REVISION` 一致；切换仓库或版本使用新目录。不要将新旧下载器同时用于同一目录。
+
+PixMo-Count 的 Parquet 包含图片 URL 和标注，图片需另行下载；该入口保存仓库原始文件，不自动解压或下载标注中的外部图片。
 
 ## BabyVision data
 
@@ -173,7 +242,7 @@ for every package during that operation. Do not replace the wheel source with a
 source distribution or enable an automatic compilation fallback on the shared server.
 
 ```bash
-bash scripts/install_flash_attention.sh
+bash scripts/env/install_flash_attention.sh
 ```
 
 The script synchronizes the locked environment and reports the package and native
@@ -185,7 +254,7 @@ control where Python dependencies are installed.
 To verify GPU execution, set `GPU_ID` at the top of the check script and run:
 
 ```bash
-bash scripts/check_flash_attention.sh
+bash scripts/env/check_flash_attention.sh
 ```
 
 The check compares FP16/BF16 forward and backward attention with PyTorch's math
@@ -203,16 +272,35 @@ and noncausal forward/backward checks and packed variable-length forward checks
 passed against math SDPA. These are kernel correctness checks, not a VLM speed
 benchmark or a full BabyVision evaluation.
 
+## Qwen3.5 线性注意力内核
+
+项目依赖固定 `flash-linear-attention[cuda]==0.5.2`，并通过 `uv.lock` 锁定 `fla-core`。这些 Python wheel 提供基于 Triton 的 Gated DeltaNet 内核，支持 prefill 和逐 token decode。环境安装由 `uv sync --frozen --no-build` 完成，日常安装和检查入口为：
+
+```bash
+bash scripts/env/install_linear_attention.sh
+bash scripts/env/check_linear_attention.sh
+```
+
+在检查脚本顶部配置 `GPU_ID`。检查使用小张量，验证 Transformers 确实调用 FLA，以及 FP16/BF16 的输出和最终 recurrent state 与 PyTorch 参考结果一致，不加载完整模型。
+
+包位于项目 `.venv/lib/python3.12/site-packages/`。FLA 首次运行会由 Triton 编译当前形状所需的 GPU kernel，Bash 入口将缓存默认放在 `WORK_DIR/cache/triton`，可通过私有 `.env` 的 `TRITON_CACHE_DIR` 覆盖。首次运行的编译属于 Triton 的正常 JIT 流程，安装过程不编译 CUDA 扩展源码。
+
+`causal-conv1d` 与 FLA 是独立依赖。核对于 2026-09-15，官方 v1.7.0 release 未提供当前 PyTorch 2.14 / Python 3.12 / CUDA 13 环境对应的 wheel，因此本环境尚未安装该包，causal convolution 仍使用参考实现。项目显式禁止 uv 从源码构建 `causal-conv1d`，后续安装需提供经过验证的兼容 wheel。安装后需重新启动推理进程，已运行进程不会自动切换内核。
+
+参考：[FLA 安装说明](https://github.com/fla-org/flash-linear-attention/blob/main/INSTALL.md)、[causal-conv1d 官方 release](https://github.com/Dao-AILab/causal-conv1d/releases/tag/v1.7.0)。
+
 ## 一般视觉推理 SFT 数据生产
 
-SFT 生产覆盖 Visual-CoT、Thyme-SFT、PixMo-Count、CoSyn-400K 和 LLaVA-OneVision。方法、字段和小样本结果见 [生产说明](docs/sft_data/sft_production.md)。先编辑脚本顶部参数，再运行对应 Bash 入口；默认仅处理少量样本，`LIMIT=0` 在生产 adapter 中表示全部已完成来源记录。本地教师入口要求正的显式数量上限。
+SFT 生产覆盖 Visual-CoT、Thyme-SFT、PixMo-Count、CoSyn-400K 和 LLaVA-OneVision。方法、字段和小样本结果见 [生产说明](docs/sft_data/sft_production.md)。自动试制从 `produce_automatic.sh` 开始，人工抽检放在教师检查之后。先编辑脚本顶部参数，再运行对应 Bash 入口；默认仅处理少量样本，`LIMIT=0` 在生产 adapter 中表示全部已完成来源记录。本地教师入口要求正的显式数量上限。
 
-共享下载源可在私有 `.env` 中设置 `DATA_DIR_PUBLIC`；未设置时使用 `DATA_DIR`。源文件只读，提取或派生图片写到独立目录。候选与日志写入 `WORK_DIR`，标准图片写入 `DATA_DIR/sft_images`。所有来源应共用图片父目录下的 split 注册表，避免同图跨划分。
+共享下载源可在私有 `.env` 中设置 `DATA_DIR_PUBLIC`；未设置时使用 `DATA_DIR`。来源文件保持只读，提取出的原图和裁剪预览写到独立目录。常规转换的候选与日志写入 `WORK_DIR`，标准图片写入 `DATA_DIR/sft_images`；供 viewer 检查的新试制结果统一写到共享目录 `tmp` 下的独立子目录。所有来源应共用 `split_registry.sqlite`，检查同一图像是否被分配到不同的数据划分。
 
 | 入口 | 用途 |
 | --- | --- |
+| `bash scripts/sft_data/produce_automatic.sh` | 使用 Qwen3.5 自动作答、选择观察窗口、生成过程和检查实际裁剪图；按读取次数及正常／纠错过程分存 |
+| `bash scripts/sft_data/automatic_counting.sh` | 使用 SAM 3 候选与 Qwen3.5 自动核对实例、完整覆盖和分组计数过程 |
 | `bash scripts/sft_data/produce_visual_cot.sh` | 从原始 metadata 与原图构造 ROI 过程；可选限量提取已完成 tar 分片 |
-| `bash scripts/sft_data/produce_thyme.sh` | 安全恢复裁剪轨迹，核对派生图与原图窗口 |
+| `bash scripts/sft_data/produce_thyme.sh` | 恢复来源裁剪轨迹，核对工具返回图片与原图窗口 |
 | `bash scripts/sft_data/produce_pixmo.sh` | `prepare` 下载／核验原图及建立 point 审核记录；`convert` 导入已审核实例框生成分组计数 |
 | `bash scripts/sft_data/propose_point_windows.sh` | 规则几何或本地 SAM 3 生成待审核 bbox 候选 |
 | `bash scripts/sft_data/propose_sft_regions.sh` | 本地缓存 VLM 为 CoSyn 或 LLaVA 提议 ROI 和 interleaved 过程 |

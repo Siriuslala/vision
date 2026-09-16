@@ -48,6 +48,29 @@ class LlavaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'counting_requires_reviewed'):
             convert_task(self.row,'train-0.parquet','commit')
 
+    def test_direct_counting_cannot_bypass_instance_metadata_through_another_subset(self):
+        self.row['conversations'][1]['value'] = '2'
+        for subset in ('Super-CLEVR(MathV360K)', 'VisualWebInstruct(filtered)',
+                       'CLEVR-Math(MathV360K)', 'IconQA(MathV360K)'):
+            self.row['data_source'] = subset
+            for query in ('How many wheels are visible?', 'Count the red objects.',
+                          'What is the number of spheres in the image?'):
+                self.row['conversations'][0]['value'] = '<image>\n' + query
+                with self.subTest(subset=subset, query=query), self.assertRaisesRegex(
+                        ValueError, 'counting_requires_reviewed'):
+                    convert_task(self.row, 'train-0.parquet', 'commit')
+
+    def test_quantities_and_geometric_measures_are_not_instance_counts(self):
+        self.row['conversations'][1]['value'] = '20'
+        for subset, query in (
+                ('TabMWP(MathV360K)', 'How many tickets were sold in 2020?'),
+                ('FigureQA(MathV360K)', 'How many units does the red bar represent?'),
+                ('Geometry3K(MathV360K)', 'How many degrees is angle x?')):
+            self.row['data_source'] = subset
+            self.row['conversations'][0]['value'] = '<image>\n' + query
+            with self.subTest(subset=subset):
+                self.assertEqual(convert_task(self.row, 'train-0.parquet', 'commit')['answer']['value'], '20')
+
     def test_annotation_bound_to_answer_and_image(self):
         base=convert_task(self.row,'train-0.parquet','commit')
         key=source_key(base['source_id'],base['query'],base['answer'],base['image'])

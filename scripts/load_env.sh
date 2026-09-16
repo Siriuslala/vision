@@ -23,6 +23,8 @@ if [[ ! -f "$ROOT_DIR/pyproject.toml" || ! -d "$ROOT_DIR/scripts" ]]; then
   return 1
 fi
 export HF_HUB_CACHE="${HF_HUB_CACHE:-${_ENV_HF_HUB_CACHE:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/hub}}"
+# Keep runtime-generated Triton kernels with other experiment artifacts.
+export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$WORK_DIR/cache/triton}"
 PROJECT_ROOT="$ROOT_DIR"
 cd "$ROOT_DIR"
 unset _ENV_PROJECT_DIR _ENV_KEY _ENV_HF_HUB_CACHE
