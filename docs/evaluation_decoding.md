@@ -32,6 +32,12 @@ Bash 入口对 Qwen3.5 的 non-thinking 模式统一选择上表 reasoning 配�
 
 模型卡对多数请求建议 32,768 个输出 token，对高度复杂问题建议 81,920。BabyVision 实验可先使用脚本中的预算检查截断比例，再决定是否统一增加预算。生成上限、实际生成长度和 `finish_reason="length"` 数量均应报告；达到上限的失败样本仍计入评分。
 
+## Qwen3.8-27B 配置
+
+Qwen3.8-27B 按指定模型卡的推荐值独立选择预设。Thinking 模式使用 temperature=1.0、top-p=0.95、top-k=20、min-p=0.0、repetition penalty=1.0；non-thinking 模式使用 temperature=0.7、top-p=0.80，其余上述参数相同。两种模式均启用 sampling，`THINKING=default` 解析为 `on`，生成长度由实验脚本独立设置。
+
+模型卡推荐的 presence penalty 在 thinking 模式为 0.0，在 non-thinking 模式为 1.5。当前生成接口不设置该参数，因此 thinking 模式对应无 presence penalty，non-thinking 模式尚未完整对齐该项推荐。模型缓存使用 `qwen3_5` 架构和支持 `enable_thinking` 的 chat template，沿用现有 thinking 开关传递方式。
+
 ## 本项目的实验设置
 
 建议保留两个明确区分的实验组：

@@ -15,7 +15,7 @@ from eva.inputs import load_image_prompts, summarize_inputs
 from eva.progress import GenerationProgress
 from eva.decoding import add_decoding_arguments, generation_kwargs, pending_batches, sampling_seed
 
-MODELS = ['Qwen3.5-4B', 'Qwen3.5-9B', 'Qwen3-VL-4B-Instruct', 'Qwen3-VL-8B-Instruct',
+MODELS = ['Qwen3.8-27B', 'Qwen3.5-4B', 'Qwen3.5-9B', 'Qwen3-VL-4B-Instruct', 'Qwen3-VL-8B-Instruct',
           'Qwen3-VL-4B-Thinking', 'Qwen3-VL-8B-Thinking']
 
 

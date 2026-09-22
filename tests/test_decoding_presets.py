@@ -22,7 +22,10 @@ printf '%s ' "$THINKING" "$DO_SAMPLE" "$TEMPERATURE" "$TOP_P" "$TOP_K" "$MIN_P" 
                               capture_output=True, text=True)
 
     def test_presets_and_aliases(self):
-        cases = [('Qwen3.5-9B', 'on', 'on true 1.0 0.95 20 0.0 1.0 8192'),
+        cases = [('Qwen3.8-27B', 'on', 'on true 1.0 0.95 20 0.0 1.0 8192'),
+                 ('Qwen/Qwen3.8-27B', 'off', 'off true 0.7 0.80 20 0.0 1.0 8192'),
+                 ('models--Qwen--Qwen3.8-27B', 'default', 'on true 1.0 0.95 20 0.0 1.0 8192'),
+                 ('Qwen3.5-9B', 'on', 'on true 1.0 0.95 20 0.0 1.0 8192'),
                  ('Qwen/Qwen3.5-9B', 'off', 'off true 1.0 1.0 40 0.0 1.0 8192'),
                  ('models--Qwen--Qwen3.5-4B', 'default', 'on true 1.0 0.95 20 0.0 1.0 8192'),
                  ('Qwen3-VL-8B-Instruct', 'default', 'off true 0.7 0.8 20 0.0 1.0 8192'),

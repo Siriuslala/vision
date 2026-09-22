@@ -12,8 +12,8 @@ fi
 source "$ROOT_DIR/scripts/decoding_presets.sh"
 
 # ==================== Configuration ====================
-MODEL="Qwen3.5-9B"
-GPU_IDS="0"                    # Choose available GPUs; multi-GPU example: "0,3".
+MODEL="Qwen/Qwen3.8-27B"  # Qwen/Qwen3.8-27B  Qwen3.5-9B
+GPU_IDS="1"                    # Choose available GPUs; multi-GPU example: "0,3".
 GPU_TAG="a40"
 GPU_TAG="a800"
 BENCH="babyvision"
@@ -21,7 +21,7 @@ CASE_IDS=()                    # An empty array selects all 388 cases; subset ex
 SPLIT="train"                  # Official split name; used as a test benchmark here.
 BATCHSIZE=4
 RANDOM_SEED=42
-THINKING="off"                 # Qwen3.5: on/off/default; Qwen3-VL: match checkpoint or use default.
+THINKING="off"                 # Qwen3.5/3.8: on/off/default; Qwen3-VL: match checkpoint or use default.
 MAX_NEW_TOKENS=32768          # Maximum new tokens; generation stops early at EOS.
 MAX_PIXELS=""                  # An empty string preserves the model processor defaults.
 DTYPE="bfloat16"
@@ -50,7 +50,7 @@ ARGS=(
   --data-root "$DATA_ROOT" --cache-root "$CACHE_ROOT"
   --batchsize "$BATCHSIZE" --gpu_ids "$GPU_IDS"
   --max-new-tokens "$MAX_NEW_TOKENS" --thinking "$THINKING"
-  --dtype "$DTYPE" --attn-implementation "$ATTN_IMPLEMENTATION" --random-seed "$RANDOM_SEED"==
+  --dtype "$DTYPE" --attn-implementation "$ATTN_IMPLEMENTATION" --random-seed "$RANDOM_SEED"
 )
 case "$DO_SAMPLE" in
   true) ARGS+=(--do-sample) ;;

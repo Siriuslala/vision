@@ -44,6 +44,8 @@ bash scripts/eva/simple_test.sh
 
 ## Configuring experiments in Bash
 
+视觉表征细节分析入口为 `bash scripts/analysis/visual_detail.sh`。在脚本顶部配置模型、GPU 和输出目录；该实验仅加载 Qwen3.5 的 visual encoder 与 merger，在合成重复图案上比较逐层特征响应和单图异常定位，无需训练。输出位于 `WORK_DIR/visual_detail/`，包括合成图、`results.json` 和 `detail_maps.png`；已有输出目录会明确报错，重复运行需指定新目录。研究假设、方法限制和初步结果见 [视觉表征细节分析](docs/visual_encoder_detail_analysis.md)。
+
 Edit the configuration section in `scripts/eva/simple_test.sh`:
 
 ```bash
@@ -90,12 +92,14 @@ Simple test passes each prompt unchanged into the model's chat template. It does
 
 | 模型及模式 | temperature | top-p | top-k | min-p | repetition penalty |
 | --- | --- | --- | --- | --- | --- |
+| Qwen3.8-27B Thinking | 1.0 | 0.95 | 20 | 0.0 | 1.0 |
+| Qwen3.8-27B Non-thinking | 0.7 | 0.80 | 20 | 0.0 | 1.0 |
 | Qwen3.5 Thinking | 1.0 | 0.95 | 20 | 0.0 | 1.0 |
 | Qwen3.5 Non-thinking reasoning | 1.0 | 1.0 | 40 | 0.0 | 1.0 |
 | Qwen3-VL Instruct，VL 配置 | 0.7 | 0.8 | 20 | 0.0 | 1.0 |
 | Qwen3-VL Thinking，VL 配置 | 1.0 | 0.95 | 20 | 0.0 | 1.0 |
 
-上述预设均启用 sampling，覆盖当前支持的 4B/8B Qwen3-VL 和 4B/9B Qwen3.5。生成长度仍由 Bash 顶部的 `MAX_NEW_TOKENS` 独立控制。Qwen3-VL 截图未指定 min-p，项目显式禁用该筛选。`presence_penalty` 因 Transformers 原生生成接口不支持而省略，不用重复惩罚替代。Python CLI 保留手动解码参数，未指定 `--do-sample` 时使用 greedy。
+上述预设均启用 sampling，覆盖当前支持的 4B/8B Qwen3-VL、4B/9B Qwen3.5 和 Qwen3.8-27B。Qwen3.8-27B 的 `THINKING=default` 解析为 `on`；其 thinking 配置不施加 presence penalty，non-thinking 推荐的 presence penalty=1.5 因接口限制省略。生成长度仍由 Bash 顶部的 `MAX_NEW_TOKENS` 独立控制。Qwen3-VL 截图未指定 min-p，项目显式禁用该筛选。`presence_penalty` 因 Transformers 原生生成接口不支持而省略，不用重复惩罚替代。Python CLI 保留手动解码参数，未指定 `--do-sample` 时使用 greedy。
 
 所有解码参数及实际生成配置写入 `.meta.json`，每条预测记录解码模式、实验 seed 和 batch seed。采样按原始 batch 编号派生独立 seed；恢复时保留原始 batch 划分，部分写入的 batch 会重新生成完整 batch，仅追加缺失记录。相同环境、输入和 batch size 下，此策略避免恢复过程改变采样随机数序列；它不保证不同硬件或计算后端间的逐位一致。参数或 batch size 变更需要新的输出文件；缺少新增解码配置的旧 metadata 无法直接恢复。
 

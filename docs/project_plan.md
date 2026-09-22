@@ -149,10 +149,15 @@ Transfusion 统一离散文本与连续图像建模，并不要求所有视觉�
 | RIS [A7] | 空间与语义监督、逐步 latent 内化和注意力限制 | 解释结果能否预测未见图像上的连续处理与局部修改效果？ |
 | Qwen3-VL / DeepStack [A1] | 跨层补充已有视觉位置的特征，基本不增加序列长度 | 局部细节能否只在输入端提供，并在没有 DeepStack 的模型上取得收益？ |
 | STN / Deformable DETR [A9–A10] | 可微空间取样及围绕参考点的特征读取 | 如何在通用 VLM 中复用这些明确的数值操作，并由原 LLM 控制连续步骤？ |
+| Recurrent Models of Visual Attention [A12] | 从 RNN hidden state 预测下一观察位置的分布参数，读取局部图像并更新状态 | 在通用 VLM 中，显式保存并引用旧窗口能否改善连续追踪和回溯？ |
+| KOSMOS-2 [A17] | 用专门的离散 location tokens 表示 bounding box 的两个角点，仍采用自回归生成 | 在相同视觉信息与监督下，连续窗口回归相对离散位置生成的精度与延迟如何？ |
+| CoVLM [A18] | LLM 生成通信 token，触发检测网络提出相关区域，再将区域特征反馈给 LLM | 对连续追踪、比较和回溯，保存窗口坐标及读取后的 hidden state 是否提供额外收益？ |
+
+上述区域选择方法分别提供了离散位置表示、直接预测观察位置和区域特征反馈的先例。[A12、A17–A18] 本研究需分别评价坐标输出方式、旧窗口引用和视觉特征读取方式的作用；一次输出窗口参数的速度收益，以及显式位置记录对连续推理的帮助，均需通过相应对照实验确认。
 
 因此，“增加视觉指针”“把视觉特征复制回来”“保留坐标”“监督注意力”都已有直接先例。本研究的候选增量是：**发现复杂视觉任务中某种可重复的空间信息处理错误，针对该错误增加区域选择与局部特征读取模块，并使实际执行的视觉步骤具有可显示、可检验的几何含义。** 如果机制分析或公平比较不支持这一增量，应缩小结论，不能以新的方法名掩盖已有设计。
 
-主动选择局部观察也已有 Recurrent Models of Visual Attention；可学习的存储访问与分步控制分别有 Neural Turing Machines 和 MAC 等先例。[A12–A14] 本研究保留原 VLM backbone，增加区域选择与局部特征读取模块；模块的收益需与普通注意力、特征复制及额外计算步骤比较。
+可学习的存储访问与分步控制分别有 Neural Turing Machines 和 MAC 等先例。[A13–A14] 本研究保留原 VLM backbone，增加区域选择与局部特征读取模块；模块的收益需与普通注意力、特征复制及额外计算步骤比较。
 
 ### 4.3 可解释性工具
 
@@ -845,12 +850,14 @@ BabyVision 用作外部测试，另评估 REC、小物体识别、OCR、文档�
 - **[A9] Spatial Transformer Networks.** [论文](https://arxiv.org/abs/1506.02025)。可微空间变换与取样的基础工作；本规划不将双线性取样作为新方法。
 - **[A10] Deformable DETR: Deformable Transformers for End-to-End Object Detection.** [论文](https://arxiv.org/abs/2010.04159)。围绕参考位置选择少量取样点的已有设计。
 - **[A11] Value Iteration Networks；Path Planning using Neural A* Search.** [VIN](https://arxiv.org/abs/1602.02867)；[Neural A* 官方页面](https://proceedings.mlr.press/v139/yonetani21a.html)。前者读取设计说明，后者本次核查官方摘要；用于界定内置规划与学习感知的比较。
-- **[A12] Recurrent Models of Visual Attention.** [论文](https://arxiv.org/abs/1406.6247)。读取局部观察选择、循环状态与训练方法，明确主动观察不是新的概念。
+- **[A12] Mnih et al. (2014), Recurrent Models of Visual Attention. NeurIPS 2014.** [论文](https://arxiv.org/abs/1406.6247)；[会议原文](https://proceedings.neurips.cc/paper_files/paper/2014/file/3e456b31302cf8210edd4029292a40ad-Paper.pdf)。location network 根据 RNN hidden state 输出下一观察位置的高斯分布均值，模型反复读取局部图像并更新状态。该工作提供直接预测观察位置与连续局部观察的先例，研究架构为 RNN。
 - **[A13] Neural Turing Machines.** [论文](https://arxiv.org/abs/1410.5401)。本次核查其可学习读写和记忆访问的总体设计，作为一般方法背景。
 - **[A14] Compositional Attention Networks for Machine Reasoning (MAC).** [论文](https://arxiv.org/abs/1803.03067)。本次核查分步控制与记忆结构的总体设计，不将组合式注意力当作尚无研究的方向。
 - **[A15] Qwen3.5 的模型配置与 Transformers 实现.** [Qwen 发布的 9B 配置](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/config.json)；[Transformers 源代码](https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3_5/modeling_qwen3_5.py)；[官方库文档](https://huggingface.co/docs/transformers/main/model_doc/qwen3_5)。2026-09-09 核查视觉编码器的最终 merger、输入嵌入接口与混合注意力；所指为此次查看的实现，不泛指所有未来 Qwen 模型。复现实验需固定代码提交和模型版本。
 
 - **[A16] PyTorch `grid_sample` 文档.** [官方文档](https://docs.pytorch.org/docs/2.14/generated/torch.nn.functional.grid_sample.html)。核查双线性插值、输入网格、边缘填充和 `align_corners` 的定义；第 6.4 节将其解释为单图特征网格上的数值取样。
+- **[A17] Peng et al. (2023), Kosmos-2: Grounding Multimodal Large Language Models to the World.** [论文](https://arxiv.org/abs/2306.14824)；[正文](https://arxiv.org/html/2306.14824v1)。将图像位置离散化，用两个专门的 location tokens 分别表示 bounding box 的左上角和右下角，并通过自回归生成完成定位。该设计提供紧凑的坐标序列表示，可作为连续窗口回归的对照。
+- **[A18] Li et al. (2024), CoVLM: Composing Visual Entities and Relationships in Large Language Models Via Communicative Decoding. ICLR 2024.** [论文](https://arxiv.org/abs/2311.03354)；[会议页面](https://proceedings.iclr.cc/paper_files/paper/2024/hash/47561f5e1dc53c7d119185e217b523d0-Abstract-Conference.html)。LLM 在生成视觉实体或关系的文字后，通过通信 token 触发检测网络提出相关区域，再将区域特征反馈给 LLM，继续生成。该工作提供由 LLM 控制区域选择及区域特征反馈的直接先例。
 
 ### 10.5 可解释性
 

@@ -12,6 +12,19 @@ select_decoding_preset() {
   MIN_P=0.0
   REPETITION_PENALTY=1.0
   case "$MODEL_SHORT" in
+    Qwen3.8-27B)
+      [[ "$THINKING" != default ]] || THINKING=on
+      TOP_K=20
+      if [[ "$THINKING" == on ]]; then
+        DECODING_PRESET="qwen38_thinking"
+        TEMPERATURE=1.0
+        TOP_P=0.95
+      else
+        DECODING_PRESET="qwen38_non_thinking"
+        TEMPERATURE=0.7
+        TOP_P=0.80
+      fi
+      ;;
     Qwen3.5-4B|Qwen3.5-9B)
       [[ "$THINKING" != default ]] || THINKING=on
       TEMPERATURE=1.0
