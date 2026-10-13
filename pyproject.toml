@@ -18,6 +18,7 @@ dependencies = [
     "transformers>=5.2,<6",
     "flash-linear-attention[cuda]==0.5.2",
     "markdown-it-py>=4,<5",
+    "matplotlib>=3.10,<4",
 ]
 
 [tool.uv]

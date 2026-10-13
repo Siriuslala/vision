@@ -59,6 +59,6 @@ bash scripts/sft_data/viewer.sh
 
 - `data/sft/viewer/server.py`：配置、JSONL 索引、样本搜索与图片服务。
 - `data/sft/viewer/static/`：网页布局、窗口与箭头、交互逻辑。
-- `tests/test_sft_viewer.py`：模式配对、不同题目、输入变化、重复 ID 和图片目录边界。
+- `tests/sft_data/test_sft_viewer.py`：模式配对、不同题目、输入变化、重复 ID 和图片目录边界。
 
 服务使用 Python 标准库，前端使用原生 HTML、CSS、JavaScript 与 SVG，无新增项目依赖。

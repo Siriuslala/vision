@@ -12,7 +12,7 @@ JSONL_FILES=(
 )
 MANIFEST=""  # Optional: "$DATA_DIR/BabyVision/train.jsonl" fills missing reference fields.
 HOST="127.0.0.1"
-PORT=1044
+PORT=1045
 # =======================================================
 if (( $# > 0 )); then echo 'Edit the script configuration instead of passing arguments.' >&2; exit 2; fi
 if (( ${#JSONL_FILES[@]} == 0 )); then echo 'No prediction JSONL files selected. Set JSONL_FILES in this script.' >&2; exit 2; fi

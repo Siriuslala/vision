@@ -12,8 +12,8 @@ fi
 source "$ROOT_DIR/scripts/decoding_presets.sh"
 
 # ==================== Configuration ====================
-MODEL="Qwen/Qwen3.8-27B"  # Qwen/Qwen3.8-27B  Qwen3.5-9B
-GPU_IDS="1"                    # Choose available GPUs; multi-GPU example: "0,3".
+MODEL="Qwen3.5-9B"  # Qwen3.8-27B  Qwen3.5-9B
+GPU_IDS="3"                    # Choose available GPUs; multi-GPU example: "0,3".
 GPU_TAG="a40"
 GPU_TAG="a800"
 BENCH="babyvision"
@@ -21,13 +21,13 @@ CASE_IDS=()                    # An empty array selects all 388 cases; subset ex
 SPLIT="train"                  # Official split name; used as a test benchmark here.
 BATCHSIZE=4
 RANDOM_SEED=42
-THINKING="off"                 # Qwen3.5/3.8: on/off/default; Qwen3-VL: match checkpoint or use default.
-MAX_NEW_TOKENS=32768          # Maximum new tokens; generation stops early at EOS.
+THINKING="on"                 # Qwen3.5/3.8: on/off/default; Qwen3-VL: match checkpoint or use default.
+MAX_NEW_TOKENS=256000           # Maximum new tokens; generation stops early at EOS.  32768, 
+RESUME=false                   # Set true to resume the same output; other settings must match.
+
 MAX_PIXELS=""                  # An empty string preserves the model processor defaults.
 DTYPE="bfloat16"
 ATTN_IMPLEMENTATION="flash_attention_2"  # FlashAttention 2; alternatives: sdpa, eager.
-# Sampling settings are selected from MODEL and THINKING in decoding_presets.sh.
-RESUME=false                   # Set true to resume the same output; other settings must match.
 DRY_RUN=false                  # true: Validate cases and prompts without loading model weights.
 DATA_ROOT="$DATA_DIR"
 CACHE_ROOT="$HF_HUB_CACHE"

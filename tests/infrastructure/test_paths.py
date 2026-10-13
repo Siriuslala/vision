@@ -14,7 +14,7 @@ class PathConfigTests(unittest.TestCase):
             root = Path(tmp) / 'code with spaces'
             (root / 'scripts').mkdir(parents=True)
             (root / 'pyproject.toml').touch()
-            loader = Path(__file__).resolve().parents[1] / 'scripts/load_env.sh'
+            loader = Path(__file__).resolve().parents[2] / 'scripts/load_env.sh'
             (root / 'scripts/load_env.sh').write_text(loader.read_text())
             env = root / '.env'
             expected = {'ROOT_DIR': str(root), 'DATA_DIR': str(Path(tmp) / 'data with spaces'),
