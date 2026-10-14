@@ -1,7 +1,7 @@
 """Ground-truth and scoring checks for comparison and geometry experiments."""
 import unittest
 import numpy as np
-from analysis_tools.comparison_grounding import majority_image,figure_boxes,score_answer,box_iou
+from analysis_tools.behavior.comparison_grounding import majority_image,figure_boxes,score_answer,box_iou
 
 
 class ComparisonGroundingTests(unittest.TestCase):

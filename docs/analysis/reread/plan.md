@@ -68,7 +68,7 @@ $$
 | (e) 缓存重读，新坐标 | 与 (d) 相同 | $(s_2,\ s_2 + r - r_0,\ s_2 + c - c_0)$ | $K$ |
 | (f-c) 随机区域裁剪重编码 | 与 (c2) 相同的操作，作用于等大的非目标区域 | 新图像默认编排 | $4K$ |
 | (f-d) 随机区域缓存重读 | 与 (d) 相同的操作，作用于等大的非目标区域 | 与 (d) 相同的规则 | $K$ |
-| (g) 浅层特征重读（探索） | 区域内 ViT 中间层特征经 merger 投影后的 token | 与 (d) 相同的规则 | $K$ |
+| (g) 特征来源扫描 | 区域内 ViT 第 $\ell$ 层特征经 merger 投影后的 token，$\ell$ 取多个深度，定义见第 3.4 节 | 与 (d) 相同的规则 | $K$ |
 
 各条件的设计考虑如下：
 
@@ -77,11 +77,35 @@ $$
 3. **(d)** 的行、列位置与原图中同一位置的 token 完全相同，时间轴取新的起点 $s_2$，以表示该段输入在序列中晚于原图出现。这一编排与视频输入中各帧共享空间位置、在时间轴上递增的做法相似，使重读 token 在行、列分量上与原图对应 token 对齐。
 4. **(e)** 将同一组 token 视为一张 $h_R \times w_R$ 的新图像，与 (d) 只在 position IDs 上不同，二者之差直接反映原图坐标的作用。
 5. **(f-c) 与 (f-d)** 的随机区域与目标区域等大、互不重叠，位置用固定随机种子抽样，分别控制两条重读路径中额外 token 与额外计算的一般效应。
-6. **(g)** 对 Qwen3.5 使用主路径 merger 投影 ViT block 8 与 16 的输出；对 Qwen3-VL 使用对应抽取层的 DeepStack merger。两种情况都属于分布外输入，其中 Qwen3-VL 的 DeepStack merger 经过训练，能把浅层特征投影到 LLM 的表示空间，但训练时以残差相加方式使用，未作为输入 embedding 使用。该条件与[多层视觉特征注入](../deepstack/plan.md)直接对应。
+6. **(g)** 扫描重读特征的来源深度，具体条件见第 3.4 节。
 
 所有含第二段视觉输入的条件，分别在有无区域提示两种情况下运行。区域提示为“The second image is a zoomed view of region (x1, y1, x2, y2) of the first image.”，其中四个数值为 oracle 区域的 0–1000 坐标。区域提示把第二段输入与原图的对应关系以文本方式给出，比较有无提示可以判断模型能否仅凭视觉输入建立这一对应。
 
 对 Qwen3-VL 运行 (d)、(e)、(f-d) 时，第二段 token 位置同样加入对应区域的 DeepStack 特征，visual_pos_masks 需要包含第二段位置；若通过 inputs_embeds 调用而不显式传入 deepstack_visual_embeds，DeepStack 会被静默丢弃。
+
+### 3.4 重读特征的来源
+
+条件 (d) 重读的是 ViT 末层经主路径 merger 投影后的 visual tokens。实验 2.1 显示，局部改动的配对响应在 ViT 浅层与中层最为集中，DeepStack 也正是从 ViT 多个深度抽取特征注入 LLM，因此重读特征的来源深度是需要系统比较的因素。条件 (g) 在保持区域、序列结构与 position IDs 规则不变的前提下，只改变重读 token 的特征来源。
+
+设 $X^{(\ell)}$ 为 ViT 第 $\ell$ 层（从 1 开始）输出的 patch 特征，形状为 $N_p \times 1152$，$N_p$ 为图像的 patch 数；$M_0$ 为主路径 merger。对 Qwen3.5-9B，扫描以下来源：
+
+| 记号 | 重读 token | 说明 |
+| --- | --- | --- |
+| (g-$\ell$) | $M_0\left(X^{(\ell)}\right)$ 中区域内的 token，$\ell \in \{3, 9, 17, 25\}$ | 主路径 merger 只在 ViT 末层特征上训练，较浅层的投影属于分布外输入；第 9、17、25 层与 Qwen3-VL-8B 的 DeepStack 抽取层（block 索引 8、16、24，0 起）位置相同 |
+| (g-27) | $M_0\left(X^{(27)}\right)$ 中区域内的 token | 与条件 (d) 相同，作为扫描的末端参照 |
+| (g-cat) | 同一区域依次重读 (g-9)、(g-17) 与 (g-27) 三段 token，三段使用相同的行、列 position IDs，时间轴依次递增 | 同时提供多个深度的特征，由模型的 attention 选择使用哪一段 |
+
+对 Qwen3-VL-8B-Instruct，ViT 中间层特征有经过训练的 DeepStack merger $M_k$，因此扫描以下来源。其中 $L_v = 27$ 为 ViT 层数，$l_k$ 为第 $k$ 个 DeepStack 抽取层（按本节的 1 起编号为第 9、17、25 层），$D_k = M_k\left(X^{(l_k)}\right)$ 为其 DeepStack 特征。[多层视觉特征注入](../deepstack/plan.md)第 4 节的上标沿用配置中的 0 起索引，与本节相差 1。
+
+| 记号 | 重读 token | 说明 |
+| --- | --- | --- |
+| (g-VL-$k$) | $M_k\left(X^{(l_k)}\right)$ 中区域内的 token，$k = 1, 2, 3$ | 以 DeepStack 特征单独作为输入 embedding，训练中该特征只以残差相加方式使用 |
+| (g-VL-inj) | 主路径 token $M_0\left(X^{(L_v)}\right)$，并在 decoder 第 1–3 层之后于第二段位置加入对应的 $D_k$ | 与训练时的注入方式一致，分布外程度最低；条件 (d) 在 Qwen3-VL 上即采用这一形式 |
+| (g-VL-off) | 主路径 token，第二段位置不加入 $D_k$ | 与 (g-VL-inj) 对照，测量注入特征在重读中的作用 |
+
+此外，深度扫描同时作用于重新编码的局部图像：对条件 (c1) 的裁剪图像也提取 ViT 第 9、17、25 层特征并按同一方式投影，记为 (c1-$\ell$)。比较 (g-$\ell$) 与 (c1-$\ell$) 可以在每个深度上区分“整图上下文中编码”与“局部单独编码”的差别，从而判断细节丢失发生在 ViT 的哪一段深度。
+
+扫描只在主要任务（T3 与 T5）的一个网格规模上运行全部来源，其余任务只运行在主要任务上表现最好的两个来源，以控制计算量。由于浅层投影属于分布外输入，(g-$\ell$) 的失败不能说明浅层特征不含细节；该判断以实验 2.3 与 2.4 对同一深度特征的读出结果为准，二者结合才能区分“特征不含细节”与“模型无法直接使用该特征”。
 
 ## 4. 任务与 oracle 区域
 
@@ -103,7 +127,7 @@ $$
 | --- | --- | --- |
 | T3 | 以被指定实例为中心的 $k \times k$ 个实例单元，靠近边界时整体向内平移以保持大小 | $k = 1, 3$ |
 | T5、T6 | 包含目标的 $k \times k$ 个实例单元，目标在区域内的相对位置均匀随机 | $k = 3, 5$ |
-| BabyVision | 依据实验 1.3 第 6 节的实例标注，取包含目标的约 3×3 个实例，目标相对位置随机 | 单一水平 |
+| BabyVision | 依据实验 1.3 第 7 节的实例标注，取包含目标的约 3×3 个实例，目标相对位置随机 | 单一水平 |
 | RefCOCO | 以目标 bbox 中心为中心、边长为 bbox 长边 3 倍的正方形，中心附加不超过半个 bbox 长边的均匀随机平移 | 单一水平 |
 
 T3 中，$k = 1$ 只包含被指定实例，$k = 3$ 额外包含 8 个邻近实例作为比较参照，二者之差反映实例比较是否需要参照实例同时出现在重读区域中。T5 与 T6 中，目标在区域内随机放置，使区域本身不直接给出答案；区域内的随机水平为 $1/k^2$。
@@ -134,7 +158,8 @@ T3 中，$k = 1$ 只包含被指定实例，$k = 3$ 额外包含 8 个邻近实�
 | (d) 优于 (e)，且 (e) 的坐标系错误率更高 | 保留原图 position IDs 有助于实例对应与原图坐标输出 | 重读 token 应沿用原图行列位置 |
 | (f-c)、(f-d) 相对 (a) 无改善 | 收益来自目标区域的信息，排除额外 token 的一般效应 | 窗口位置的选择是关键 |
 | 有区域提示时显著优于无提示 | 模型依赖文本建立第二段输入与原图的对应 | 未经训练时需要显式提供窗口坐标 |
-| (g) 优于 (d) | 浅层特征对细粒度任务更有用 | 与问题 4 的结论结合，考虑重读浅层特征 |
+| 某一 (g-$\ell$) 优于 (d)，或 (g-VL-inj) 优于 (g-VL-off) | 较浅层特征对细粒度任务更有用 | 与问题 4 的结论结合，考虑在窗口读取中使用多深度特征 |
+| (g-$\ell$) 不优于 (d)，但实验 2.3 显示该深度细节可读性更高 | 浅层特征含有细节，但原模型无法直接使用其投影 | 方向二需要为浅层特征训练投影 |
 
 (d) 与 (e) 的比较与实验 3.5 关于坐标来源的结论互相印证：若 3.5 显示坐标输出主要依赖 decoder position IDs，则 (d) 对 (e) 的优势应当集中于定位任务。实验 3.5 的设计见[位置信息提取](../position/plan.md)及其坐标读取设计文档 [design_coordinate_readout.md](../position/design_coordinate_readout.md)。
 
@@ -142,7 +167,7 @@ T3 中，$k = 1$ 只包含被指定实例，$k = 3$ 额外包含 8 个邻近实�
 
 1. 模型使用 bfloat16，batch size 1，thinking off，greedy decoding，定位任务输出上限为 128 tokens。二值任务读取首 token 的 Yes 与 No logit，定义与实验 1.3 相同。
 2. (d)、(e)、(f-d) 与 (g) 通过 model.model.get_image_features 取得视觉特征，修改后写入 inputs_embeds，并显式传入按第 3.2 节规则构造的 position_ids。每次运行先用该自定义路径重现条件 (a)，核对其 logits 与标准调用的差异在 bfloat16 数值误差以内，再运行其余条件。
-3. 实验程序为 analysis_tools/zoom_oracle.py，Bash 入口为 scripts/analysis/zoom_oracle.sh，全部参数集中于入口顶部。合成刺激由 analysis_tools/stimuli.py 生成。
+3. 实验程序为 analysis_tools/reread/zoom_oracle.py，Bash 入口为 scripts/analysis/reread/zoom_oracle.sh，全部参数集中于入口顶部。合成刺激由 analysis_tools/common/stimuli.py 生成。
 4. 产物保存于 WORK_DIR 的 analysis/reread/ 下，目录命名为“日期_实验名称”，例如 analysis/reread/2026-10-27_zoom_oracle/。每个目录保存模型版本、条件配置、oracle 区域与随机区域的坐标及随机种子、每条输入的 position IDs 摘要、全部 prompt 与原始回答、首 token logits、严格评分与诊断评分。文档用图复制到 docs/analysis/reread/figures/。
 
 ## 9. 解释范围与进度

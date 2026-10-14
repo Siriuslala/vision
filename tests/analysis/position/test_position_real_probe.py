@@ -1,6 +1,6 @@
 import numpy as np
 import unittest
-from analysis_tools.position_real_probe import patch_grid, labels
+from analysis_tools.position.position_real_probe import patch_grid, labels
 
 
 class PositionRealProbeTests(unittest.TestCase):

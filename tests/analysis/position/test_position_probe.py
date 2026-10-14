@@ -1,7 +1,7 @@
 """Check coordinate labels and the numerical probe, without model downloads."""
 import unittest
 import numpy as np
-from analysis_tools.position_probe import coordinates, fit_ridge, metrics, make_image
+from analysis_tools.position.position_probe import coordinates, fit_ridge, metrics, make_image
 
 
 class PositionProbeTests(unittest.TestCase):

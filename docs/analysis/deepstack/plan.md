@@ -123,7 +123,7 @@ Qwen3.5 的 ViT 规格与 Qwen3-VL 基本相同（8B 对 9B：27 个 block、hid
 
 模型分为两组：Qwen3-VL-8B-Instruct 对 Qwen3.5-9B，Qwen3-VL-4B-Instruct 对 Qwen3.5-4B。第二组用于检验结论是否随模型规模保持一致。评测包含三部分：
 
-1. **BabyVision 全集。** 按子类型报告准确率，重点关注 Find the different、Fine-grained Discrimination 与 Visual Tracking。Qwen3.5-9B 在 thinking off 条件下已有结果：总体 17.3%，Find the different 1/16，Fine-grained Discrimination 19.0%，Visual Tracking 10.8%。其余三个模型需要新运行，解码参数采用各模型官方推荐的 thinking off 或 Instruct 设置，与评分规则一并记录。
+1. **BabyVision 全集。** 按子类型报告准确率，重点关注 Find the different、Fine-grained Discrimination 与 Visual Tracking。Qwen3.5-9B 在 thinking off 条件下已有结果：总体 17.3%，Find the different 1/16，Fine-grained Discrimination 19.0%，Visual Tracking 10.8%。其余三个模型需要新运行，解码参数采用各模型官方推荐的 thinking off 或 Instruct 设置，与评分规则一并记录。各模型在 BabyVision 上的完整回答均保存，Find the different 与 Fine-grained Discrimination 两个子类型的推理文本按[能力分解](../behavior/design_decomposition.md)第 6.3 节的编码表分析，比较两类模型的失败环节分布。
 2. **能力分解子任务。** 使用实验 1.3 的全部子任务 T0–T6，刺激与问题完全相同。二值任务读取首 token 的 Yes 与 No logit，定位任务使用 greedy decoding。
 3. **RefCOCO 小目标定位。** 以目标 bbox 面积占图像面积的比例 $a$ 分为三层：$a < 1\%$、$1\% \le a < 5\%$、$a \ge 5\%$。每层从 RefCOCO val 中抽取 300 条表达式，每张图像最多取一条；若某一层不足 300 条，则使用全部可用样本并报告分母。模型输出 0–1000 归一化 bbox，以 IoU≥0.5 的比例为主指标。
 
@@ -221,7 +221,7 @@ $$
 ## 9. 运行与产物
 
 1. 模型均使用 bfloat16，batch size 1，thinking off。BabyVision 评测沿用仓库现有的评测入口与评分规则，新增模型的解码参数写入运行配置。
-2. 端到端对照的实验程序为 analysis_tools/deepstack_comparison.py，Bash 入口为 scripts/analysis/deepstack_comparison.sh；消融为 analysis_tools/deepstack_ablation.py 与 scripts/analysis/deepstack_ablation.sh；表征对照复用实验 2.3 与 2.4 的特征提取与 probe 代码，入口为 scripts/analysis/deepstack_representation.sh。全部运行参数集中于 Bash 入口顶部。
+2. 端到端对照的实验程序为 analysis_tools/deepstack/deepstack_comparison.py，Bash 入口为 scripts/analysis/deepstack/deepstack_comparison.sh；消融为 analysis_tools/deepstack/deepstack_ablation.py 与 scripts/analysis/deepstack/deepstack_ablation.sh；表征对照复用实验 2.3 与 2.4 的特征提取与 probe 代码，入口为 scripts/analysis/deepstack/deepstack_representation.sh。全部运行参数集中于 Bash 入口顶部。
 3. 产物保存于 WORK_DIR 的 analysis/deepstack/ 下，目录命名为“日期_实验名称”，例如 analysis/deepstack/2026-10-20_end_to_end/、analysis/deepstack/2026-10-27_ablation/。每个目录保存模型版本与配置、解码参数、样本列表、全部 prompt 与原始回答、首 token logits、严格评分与诊断评分、均值替换所用参考集的 hash 与均值向量。文档用图复制到 docs/analysis/deepstack/figures/。
 
 ## 10. 解释范围与进度

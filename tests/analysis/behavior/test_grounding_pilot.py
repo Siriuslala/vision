@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from analysis_tools.grounding_pilot import make_grid, score_point
+from analysis_tools.behavior.grounding_pilot import make_grid, score_point
 
 
 class GroundingPilotTests(unittest.TestCase):

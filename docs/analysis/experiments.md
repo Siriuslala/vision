@@ -11,6 +11,10 @@
 | 位置信息提取 | `analysis/position/2026-10-01_refcoco_layers/` | 真实图像的 ViT 与 decoder 逐层坐标 probe |
 | 词汇读出 | `analysis/token_semantics/2026-10-01_final_layers/` | 末尾 decoder 层及 top-1/2/3 词图 |
 | Grounding 行为 | `analysis/behavior/2026-09-30_selection_formats/` | 已有 73 条查询的图示和历史原始运行索引 |
+| 视觉细节表征 | `analysis/representation/2026-10-13_activation_patching/` | 实验 2.5a：五个条件的合格配对筛选、层×token 组恢复与破坏扫描、逐文本 token 替换及 float32 复核 |
+| 行为诊断 | `analysis/behavior/2026-10-13_decomposition/` | 实验 1.3 正式运行：主评测 37752 条、显式推理 300 条、thinking on 52 条、BabyVision 对应问题 192 条，以及分析与推理文本编码 |
+| 行为诊断 | `analysis/behavior/2026-10-13_decomposition_pilot/` | 实验 1.3 的开发运行（每单元 3 张图），只用于确定规模与格式，不进入正式评分 |
+| 共享刺激检查 | `analysis/common/stimuli_check/` | 全部模板与属性变化的样例图 |
 
 2026-10-13 起新增的研究问题使用 `analysis/deepstack/` 与 `analysis/reread/`；行为诊断、表征和位置问题的新实验继续使用上表对应的研究问题目录。各实验的计划目录名称见其设计文档的“运行与产物”一节，运行完成后补入上表。
 

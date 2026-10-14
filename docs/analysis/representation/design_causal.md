@@ -120,7 +120,7 @@ $$
 | --- | --- | --- |
 | 恢复比例 $r$ | patching 后判别分数向 clean 输入移动的比例 | 2.5a |
 | 破坏比例 | 反向 patching 后判别分数向 corrupted 输入移动的比例 | 2.5a |
-| 转移层 | 最后一个 prompt token 的 $r$ 超过目标实例 token 组的最浅层 | 2.5a |
+| 转移层 | 图像之后全部文本 token 的 $r$ 超过全部视觉 token 的 $r$ 的最浅层。异常信息先由视觉 token 进入问题文本与 chat template，再汇集到最后一个 prompt token，因此以“全部图像后文本”与“全部视觉”的比较确定信息离开视觉 token 的层 | 2.5a |
 | 准确率与 AUROC 变化 | 擦除后相对未擦除的变化，减去随机子空间擦除的变化 | 2.5b |
 | 残余可读性 | 擦除后线性与 MLP probe 的 AUROC | 2.5b |
 | caption loss 变化 | 擦除前后 COCO caption 的平均 token loss 之差 | 2.5b |
@@ -148,8 +148,8 @@ $$
 
 ## 7. 运行与产物
 
-1. 代码实现为 `analysis_tools/activation_patching.py`（2.5a）与 `analysis_tools/concept_erasure.py`（2.5b），hook 工具与实验 2.2d 共用。
-2. Bash 入口为 `scripts/analysis/activation_patching.sh` 与 `scripts/analysis/concept_erasure.sh`，任务条件、提取位置、token 组、配对数量与随机种子集中于脚本顶部。
+1. 代码实现为 `analysis_tools/representation/activation_patching.py`（2.5a）与 `analysis_tools/representation/concept_erasure.py`（2.5b），hook 工具与实验 2.2d 共用。
+2. Bash 入口为 `scripts/analysis/representation/activation_patching.sh` 与 `scripts/analysis/representation/concept_erasure.sh`，任务条件、提取位置、token 组、配对数量与随机种子集中于脚本顶部。
 3. 产物保存于 WORK_DIR 的 `analysis/representation/<日期>_activation_patching/` 与 `analysis/representation/<日期>_concept_erasure/`，包括配对图像与 metadata、全部 prompt、clean 与 corrupted 的判别分数、逐配对逐条件的 $r$、被排除配对的记录、擦除函数参数与擦除前后的模型输出。
 
 ## 8. 解释范围

@@ -146,8 +146,8 @@ $$
 
 ## 9. 运行与产物
 
-1. 代码实现为 `analysis_tools/feature_inversion.py`（解码器训练、重建与指标）与 `analysis_tools/visual_sae.py`（SAE 训练与特征可视化），特征提取复用实验 2.3 的流程。
-2. Bash 入口为 `scripts/analysis/feature_inversion.sh` 与 `scripts/analysis/visual_sae.sh`，提取位置、解码器结构、训练步数、字典大小与 $k$ 集中于脚本顶部。
+1. 代码实现为 `analysis_tools/representation/feature_inversion.py`（解码器训练、重建与指标）与 `analysis_tools/representation/visual_sae.py`（SAE 训练与特征可视化），特征提取复用实验 2.3 的流程。
+2. Bash 入口为 `scripts/analysis/representation/feature_inversion.sh` 与 `scripts/analysis/representation/visual_sae.sh`，提取位置、解码器结构、训练步数、字典大小与 $k$ 集中于脚本顶部。
 3. 产物保存于 WORK_DIR 的 `analysis/representation/<日期>_feature_inversion/` 与 `analysis/representation/<日期>_visual_sae/`，包括解码器 checkpoint、训练曲线、测试集重建图、逐图指标、SAE checkpoint 与特征卡片。
 
 ## 10. 解释范围

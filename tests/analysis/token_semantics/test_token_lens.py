@@ -1,6 +1,6 @@
 """Validate sampling partitions used in norm-conditioned summaries."""
 import unittest
-from analysis_tools.token_lens import norm_groups
+from analysis_tools.token_semantics.token_lens import norm_groups
 
 
 class TokenLensTests(unittest.TestCase):
@@ -16,12 +16,12 @@ class TokenLensTests(unittest.TestCase):
             norm_groups([float('nan'), 1])
 
     def test_unicode_tokens_are_not_escaped(self):
-        from analysis_tools.token_lens import visible_token
+        from analysis_tools.token_semantics.token_lens import visible_token
         self.assertEqual(visible_token(' 天空\n'), '·天空[LF]')
         self.assertNotIn('\\u', visible_token('道路'))
 
     def test_render_requires_explicit_available_font(self):
         from pathlib import Path
-        from analysis_tools.token_lens import render_case
+        from analysis_tools.token_semantics.token_lens import render_case
         with self.assertRaises(ValueError):
             render_case({'grid': [1, 1], 'layers': {}}, Path('/tmp'), '/missing/font.otf')

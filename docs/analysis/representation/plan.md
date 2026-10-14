@@ -38,7 +38,7 @@
 | 2.2 | 位置相关成分与高范数 token | 分解位置相关成分，通过干预确定其来源，用 probe 测量高范数 token 所含信息，用消融测量其功能 | 待实施 | [设计](design_positional_component.md) |
 | 2.3 | 视觉属性 probe | 在输入到输出的各提取位置训练 probe，测量单图中实例绝对属性与相对属性的可读性及细节分辨率 | 待实施 | [设计](design_attribute_probe.md) |
 | 2.4 | 特征反演与特征字典 | 将各层 visual tokens 重建为图像，直观显示细节随深度的保留与丢失；以稀疏自编码器探索未预设的特征 | 待实施 | [设计](design_visualization.md) |
-| 2.5 | Activation patching 与概念擦除 | 检验完整模型的回答是否依赖目标实例 token 的表征以及 2.3 识别的属性子空间 | 待实施 | [设计](design_causal.md) |
+| 2.5 | Activation patching 与概念擦除 | 检验完整模型的回答是否依赖目标实例 token 的表征以及 2.3 识别的属性子空间 | 2.5a 已完成；2.5b 待实施 | [设计](design_causal.md)、[2.5a 10-13](results_2026-10-13_activation_patching.md) |
 
 ## 5. 子实验之间的关系
 

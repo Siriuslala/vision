@@ -49,18 +49,20 @@ bash scripts/eva/simple_test.sh
 
 视觉表征研究按研究问题组织，入口为[总研究计划](docs/analysis/plan.md)和[文档目录](docs/analysis/README.md)。当前研究 Qwen3.5-9B 的行为诊断、视觉细节表征、位置信息与坐标读取、多层视觉特征注入（与 Qwen3-VL 对照）以及局部重读；token 词汇读出已终止。完整模型实验固定 thinking off。新产物保存于 `WORK_DIR/analysis/<研究问题>/<日期_实验名称>/`，历史运行来源见[实验产物说明](docs/analysis/experiments.md)。
 
+分析代码与 Bash 入口按研究问题分目录：`analysis_tools/<研究问题>/` 存放实验程序，`analysis_tools/common/` 存放跨问题共用的刺激生成与模型工具，`scripts/analysis/<研究问题>/` 存放对应入口，测试位于 `tests/analysis/<研究问题>/`。研究问题目录包括 behavior、representation、position、deepstack、reread 与 token_semantics。
+
 | 入口 | 实验内容 |
 | --- | --- |
-| `bash scripts/analysis/representation_patterns.sh` | 规则与扩展布局的表征差异，以及高范数 token 直接排除 |
-| `bash scripts/analysis/representation_cross_model.sh` | Qwen3-VL-8B-Instruct 的空间模式对照 |
-| `bash scripts/analysis/representation_pattern_figures.sh` | 从保存结果重绘布局与范数图 |
-| `bash scripts/analysis/position_real_probe.sh` | RefCOCO 真实图像的 ViT／decoder 逐层位置 probe |
-| `bash scripts/analysis/token_lens_layers.sh` | decoder 末尾连续层的 top-1/2/3 词图 |
-| `bash scripts/analysis/behavior_figures.sh` | 已有 grounding 回答的输入、真值与预测图示 |
-| `bash scripts/analysis/distance_register.sh` | 2026-09-30 多图案距离与高范数实验 |
-| `bash scripts/analysis/position_probe.sh` | 2026-09-30 合成图位置 probe 与前缀对照 |
-| `bash scripts/analysis/token_lens.sh` | 2026-09-30 五个阶段的 raw logit lens |
-| `bash scripts/analysis/comparison_grounding.sh` | 目标选择条件与答案格式对照 |
+| `bash scripts/analysis/representation/representation_patterns.sh` | 规则与扩展布局的表征差异，以及高范数 token 直接排除 |
+| `bash scripts/analysis/representation/representation_cross_model.sh` | Qwen3-VL-8B-Instruct 的空间模式对照 |
+| `bash scripts/analysis/representation/representation_pattern_figures.sh` | 从保存结果重绘布局与范数图 |
+| `bash scripts/analysis/position/position_real_probe.sh` | RefCOCO 真实图像的 ViT／decoder 逐层位置 probe |
+| `bash scripts/analysis/token_semantics/token_lens_layers.sh` | decoder 末尾连续层的 top-1/2/3 词图 |
+| `bash scripts/analysis/behavior/behavior_figures.sh` | 已有 grounding 回答的输入、真值与预测图示 |
+| `bash scripts/analysis/representation/distance_register.sh` | 2026-09-30 多图案距离与高范数实验 |
+| `bash scripts/analysis/position/position_probe.sh` | 2026-09-30 合成图位置 probe 与前缀对照 |
+| `bash scripts/analysis/token_semantics/token_lens.sh` | 2026-09-30 五个阶段的 raw logit lens |
+| `bash scripts/analysis/behavior/comparison_grounding.sh` | 目标选择条件与答案格式对照 |
 
 在各脚本顶部设置参数，在私有 `.env` 配置 `REFCOCO_DIR` 等本地路径。中文 token 图另使用 `TOKEN_MAP_FONT` 指向支持 CJK 的字体文件。科学曲线绘图使用由 `pyproject.toml` 与 `uv.lock` 管理的 matplotlib。早期细节实验和 point 实验分别保留 `visual_detail.sh`、`grounding_pilot.sh` 入口，结果在所属问题目录中按日期记录。
 

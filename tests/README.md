@@ -4,6 +4,7 @@
 
 | 目录 | 测试范围 |
 | --- | --- |
+| `analysis/common/` | 共享合成刺激的模板、属性变化、画布对齐与确定性 |
 | `analysis/representation/` | 表征距离、局部改动、实例布局与高范数处理 |
 | `analysis/position/` | 位置标签、网格顺序与坐标 probe |
 | `analysis/token_semantics/` | 词汇读出、范数组划分与中文显示 |

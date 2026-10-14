@@ -2,7 +2,7 @@
 import unittest
 import numpy as np
 import torch
-from analysis_tools.representation_patterns import layouts, render, region_indices, pairwise_scores, readouts, chosen_targets
+from analysis_tools.representation.representation_patterns import layouts, render, region_indices, pairwise_scores, readouts, chosen_targets
 
 
 class RepresentationPatternTests(unittest.TestCase):

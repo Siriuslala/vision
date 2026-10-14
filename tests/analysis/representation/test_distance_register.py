@@ -3,7 +3,7 @@ import unittest
 from copy import deepcopy
 import numpy as np
 import torch
-from analysis_tools.distance_register import paired_maps, single_scores, synthetic, unique_top, validate_checkpoint, external_peak_record
+from analysis_tools.representation.distance_register import paired_maps, single_scores, synthetic, unique_top, validate_checkpoint, external_peak_record
 
 
 class DistanceRegisterTests(unittest.TestCase):

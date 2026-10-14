@@ -140,7 +140,7 @@ $w$ 是观测位移在预测位移方向上的投影与预测位移长度之比�
 
 ### 6.2 S2：position IDs 干预
 
-1. **全局平移。** 先构造带间隙的基线：图像前后各保留 $G = 8$ 个未使用的位置，即图像 token 的 position IDs 整体加 $G$，图像之后的文本从 $s + 2G + \max(H, W)$ 开始。在 C0 样本上核对该基线与标准 position IDs 的输出一致后，再对图像 token 施加平移 $p^{h} \leftarrow p^{h} + \delta_h$、$p^{w} \leftarrow p^{w} + \delta_w$，$\delta_h, \delta_w \in \{-8, -4, -2, 0, 2, 4, 8\}$，文本 token 的 position IDs 保持不变。设置间隙是为了使平移后的图像 IDs 不与前后文本的 IDs 重叠，并使问题 token 的 position IDs 在全部条件下相同，从而只改变图像与问题之间的相对位置。若模型以“目标相对问题 token 的位置差”读取坐标，输出纵坐标的预测位移为 $1000\,\delta_h / H$，横坐标同理；若模型以目标相对图像首 token 或图像边界的位置差读取坐标，输出不变。对每个样本以输出位移对预测位移做过原点的线性回归，斜率即多个 $\delta$ 合并估计的 $w$。
+1. **全局平移。** 先构造带间隙的基线：图像前后各保留 $G = 8$ 个未使用的位置，即图像 token 的 position IDs 整体加 $G$，图像之后的文本从 $s + 2G + \max(H, W)$ 开始。间隙基线须先通过一致性检验：在全部 C0 答对样本上比较间隙基线与标准 position IDs 的 greedy 输出，报告坐标完全相同的比例与坐标差的分布，并比较首个坐标 token 的 logits。若二者一致，后续平移以间隙基线为参照；若存在系统差异，则单独报告该差异，平移效应只相对间隙基线计算，不与标准 position IDs 的结果直接比较。随后对图像 token 施加平移 $p^{h} \leftarrow p^{h} + \delta_h$、$p^{w} \leftarrow p^{w} + \delta_w$，$\delta_h, \delta_w \in \{-8, -4, -2, 0, 2, 4, 8\}$，文本 token 的 position IDs 保持不变。设置间隙是为了使平移后的图像 IDs 不与前后文本的 IDs 重叠，并使问题 token 的 position IDs 在全部条件下相同，从而只改变图像与问题之间的相对位置。若模型以“目标相对问题 token 的位置差”读取坐标，输出纵坐标的预测位移为 $1000\,\delta_h / H$，横坐标同理；若模型以目标相对图像首 token 或图像边界的位置差读取坐标，输出不变。对每个样本以输出位移对预测位移做过原点的线性回归，斜率即多个 $\delta$ 合并估计的 $w$。
 2. **区域互换。** 选取与目标区域 $\mathcal{T}$ 等大、位于空白背景的区域 $\mathcal{T}'$，交换两区域 token 的 $(p^{h}, p^{w})$，visual embedding 与序列顺序保持不变。预测位移 $d$ 为 $\mathcal{T}'$ 中心减去 $\mathcal{T}$ 中心。若输出移向 $\mathcal{T}'$，坐标来自 S2。
 
 ### 6.3 S1：ViT 位置干预
@@ -244,7 +244,7 @@ RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有
 
 ## 13. 运行与产物
 
-1. 实验程序为 `analysis_tools/coordinate_readout.py`，刺激生成复用 `analysis_tools/stimuli.py`，作图程序为 `analysis_tools/coordinate_readout_figures.py`；Bash 入口为 `scripts/analysis/coordinate_readout.sh`，模型、部分选择（C0–C5）、干预参数与随机种子集中在脚本顶部。
+1. 实验程序为 `analysis_tools/position/coordinate_readout.py`，刺激生成复用 `analysis_tools/common/stimuli.py`，作图程序为 `analysis_tools/position/coordinate_readout_figures.py`；Bash 入口为 `scripts/analysis/position/coordinate_readout.sh`，模型、部分选择（C0–C5）、干预参数与随机种子集中在脚本顶部。
 2. 产物保存于 WORK_DIR 的 `analysis/position/<日期>_coordinate_readout/`：`cases.json` 记录图像、真值与区域定义；`baseline/` 保存 C0 的 prompt、原始回答与评分；`attention/` 保存候选 head 的 attention 与归因；`interventions/` 保存每个干预条件的 position IDs 摘要、原始回答与解析坐标；`results.json` 保存全部指标与区间；`experiment.json` 保存模型版本、attention 实现、代码摘要与运行参数。
 3. 每个干预条件保存完整的原始回答，解析失败计入分母并单独统计，不以诊断解析覆盖严格解析。
 

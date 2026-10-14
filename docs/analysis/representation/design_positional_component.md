@@ -211,8 +211,8 @@ $$
 
 ## 8. 运行与产物
 
-1. 代码实现为 `analysis_tools/positional_component.py`（2.2a–2.2c）与 `analysis_tools/positional_ablation.py`（2.2d），干预使用 PyTorch forward hooks 与对 position IDs、position embedding 的显式替换，2.2d 与实验 2.5 共用 hook 工具。
-2. Bash 入口为 `scripts/analysis/positional_component.sh` 与 `scripts/analysis/positional_ablation.sh`，提取位置、图像组、阈值 $\tau$ 与随机种子集中于脚本顶部。
+1. 代码实现为 `analysis_tools/representation/positional_component.py`（2.2a–2.2c）与 `analysis_tools/representation/positional_ablation.py`（2.2d），干预使用 PyTorch forward hooks 与对 position IDs、position embedding 的显式替换，2.2d 与实验 2.5 共用 hook 工具。
+2. Bash 入口为 `scripts/analysis/representation/positional_component.sh` 与 `scripts/analysis/representation/positional_ablation.sh`，提取位置、图像组、阈值 $\tau$ 与随机种子集中于脚本顶部。
 3. 产物保存于 WORK_DIR 的 `analysis/representation/<日期>_positional_component/` 与 `analysis/representation/<日期>_positional_ablation/`，包括图像 metadata、逐层统计、干预配置、probe 权重与指标、消融前后的模型输出。
 
 ## 9. 解释范围

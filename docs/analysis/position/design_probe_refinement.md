@@ -215,7 +215,7 @@ $$
 
 ## 9. 运行与产物
 
-1. 实验程序为 `analysis_tools/position_probe_refinement.py`，作图程序扩展 `analysis_tools/position_figures.py`，Bash 入口为 `scripts/analysis/position_probe_refinement.sh`，模型、数据规模、提取位置、probe 列表与随机种子集中在脚本顶部。
+1. 实验程序为 `analysis_tools/position/position_probe_refinement.py`，作图程序扩展 `analysis_tools/position/position_figures.py`，Bash 入口为 `scripts/analysis/position/position_probe_refinement.sh`，模型、数据规模、提取位置、probe 列表与随机种子集中在脚本顶部。
 2. 产物保存于 WORK_DIR 的 `analysis/position/<日期>_probe_refinement/`：`cases.json` 记录图像来源、hash、划分、尺寸与网格；`stats/` 保存 ridge 的充分统计量；`features/` 保存选定层的采样特征；`results.json` 保存全部指标、区间与基线；`predictions.npz` 保存测试集预测；`experiment.json` 保存模型版本、代码摘要与运行参数。
 3. 实验 2.3 属性 probe 复用本实验的特征提取与数据划分代码。
 

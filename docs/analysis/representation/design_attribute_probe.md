@@ -117,7 +117,7 @@ $$
 | 跨幅度 | 幅度等级 3 与 4 | 幅度等级 1 与 2 | 显著变化学到的方向能否检测细微变化 |
 | 合成到 BabyVision | 全部合成训练集 | BabyVision 找不同题目的实例裁剪（可选） | 合成结论能否适用于原始题目 |
 
-BabyVision 实例裁剪使用实验 1.3 第 6 节的人工标注，裁剪后缩放到 64×64 pixels 并以单实例画布输入。
+BabyVision 实例裁剪使用实验 1.3 第 7 节的人工标注，裁剪后缩放到 64×64 pixels 并以单实例画布输入。
 
 ## 5. 指标
 
@@ -158,7 +158,7 @@ $\delta_{75}$ 的计算方式为：对每个提取位置与变化类型，以 lo
 ## 8. 运行与产物
 
 1. 特征提取与[问题 3](../position/plan.md) 的位置 probe 共用流程，只保存实例窗口内的 token 与问题末端 token，以 float16 存储；probe 训练在 CPU 或单张 GPU 上完成。
-2. 代码实现为 `analysis_tools/attribute_probe.py`，Bash 入口为 `scripts/analysis/attribute_probe.sh`，提取位置、聚合方式、正则化网格、泛化划分与随机种子集中于脚本顶部。
+2. 代码实现为 `analysis_tools/representation/attribute_probe.py`，Bash 入口为 `scripts/analysis/representation/attribute_probe.sh`，提取位置、聚合方式、正则化网格、泛化划分与随机种子集中于脚本顶部。
 3. 产物保存于 WORK_DIR 的 `analysis/representation/<日期>_attribute_probe/`，包括图像 metadata、特征缓存索引、各 probe 的权重与选定 $\lambda$、逐实例 probe 分数、控制任务标签、全部指标与 bootstrap 样本。
 
 ## 9. 解释范围
