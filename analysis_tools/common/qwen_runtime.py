@@ -130,6 +130,37 @@ def generate(rt: Runtime, batch, max_new_tokens: int) -> dict:
             'finish_reason': 'eos' if finished else 'length'}
 
 
+@torch.inference_mode()
+def generate_batch(rt: Runtime, items: list[tuple[list[Image.Image], str]], max_new_tokens: int,
+                   thinking: bool = False) -> list[dict]:
+    """Greedy decoding of several single-turn conversations in one left-padded batch.
+
+    Bare-answer decoding at batch size 1 is bound by per-step overhead, so batching is
+    the main throughput lever. Callers should still spot-check equivalence with
+    `generate` on a subset, since bf16 kernels may round differently with padding.
+    """
+    texts = [prompt_text(rt, len(images), text, thinking) for images, text in items]
+    images = [image for imgs, _ in items for image in imgs]
+    rt.processor.tokenizer.padding_side = 'left'
+    batch = rt.processor(text=texts, images=images or None, padding=True, return_tensors='pt').to(rt.device)
+    for image, (_, h, w) in zip(images, batch['image_grid_thw'].tolist() if images else []):
+        if (h * 16, w * 16) != (image.height, image.width):
+            raise ValueError(f'Processor resized a {image.width}x{image.height} image to {w * 16}x{h * 16}.')
+    out = rt.model.generate(**batch, max_new_tokens=max_new_tokens, do_sample=False,
+                            temperature=None, top_p=None, top_k=None)
+    eos_ids = rt.model.generation_config.eos_token_id
+    eos_ids = set(eos_ids if isinstance(eos_ids, list) else [eos_ids])
+    pad_id = rt.tokenizer.pad_token_id
+    results = []
+    for row in out[:, batch['input_ids'].shape[1]:]:
+        ids = row.tolist()
+        end = next((i + 1 for i, t in enumerate(ids) if t in eos_ids), None)
+        new = ids[:end] if end is not None else [t for t in ids if t != pad_id]
+        results.append({'text': rt.tokenizer.decode(new, skip_special_tokens=True), 'n_tokens': len(new),
+                        'finish_reason': 'eos' if end is not None else 'length'})
+    return results
+
+
 def _hidden(output):
     return output[0] if isinstance(output, tuple) else output
 

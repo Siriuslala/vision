@@ -13,6 +13,10 @@
 | Grounding 行为 | `analysis/behavior/2026-09-30_selection_formats/` | 已有 73 条查询的图示和历史原始运行索引 |
 | 视觉细节表征 | `analysis/representation/2026-10-13_activation_patching/` | 实验 2.5a：五个条件的合格配对筛选、层×token 组恢复与破坏扫描、逐文本 token 替换及 float32 复核 |
 | 行为诊断 | `analysis/behavior/2026-10-13_decomposition/` | 实验 1.3 正式运行：主评测 37752 条、显式推理 300 条、thinking on 52 条、BabyVision 对应问题 192 条，以及分析与推理文本编码 |
+| 位置信息提取 | `analysis/position/2026-10-14_probe_refinement/` | 实验 3.4：3000 张 RefCOCO 与 352 张合成图的 62 个位置特征，全维 ridge、MLP、学习曲线、相对位置与内容对照；大体积特征存放于 DATA_DIR 的 scratch 目录，WORK_DIR 路径为符号链接 |
+| 坐标读取 | `analysis/position/2026-10-14_coordinate_readout/` | 实验 3.5：C0 基准、C1 生成时 attention 与梯度归因、C2 与 C3 位置来源交换、C4 head 消融，以及 20×20 与 10×10 网格失败的定向分析 |
+| 多层视觉特征注入 | `analysis/deepstack/2026-10-14_end_to_end/` | 实验 4.2：四个模型的 BabyVision 全集、T0–T6 子任务（含修订 T3 问法）、RefCOCO 面积分层定位与推理文本编码 |
+| 行为诊断 | `analysis/behavior/2026-10-14_decomposition_supplement/` | 实验 1.3 补充条件：T3 问法修订、非方形与长轴网格、固定 768 画布、环形布局，共 32064 条 |
 | 行为诊断 | `analysis/behavior/2026-10-13_decomposition_pilot/` | 实验 1.3 的开发运行（每单元 3 张图），只用于确定规模与格式，不进入正式评分 |
 | 共享刺激检查 | `analysis/common/stimuli_check/` | 全部模板与属性变化的样例图 |
 

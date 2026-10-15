@@ -58,29 +58,30 @@ $$
 \theta_u = \left(10^{7}\right)^{-u/32}, \qquad u = 0, 1, \ldots, 31,
 $$
 
-其中 $u$ 为通道对索引。32 个通道对按 mrope_section 为 [11, 11, 10] 交错分配给 $t$、$h$、$w$ 三个轴。由于 rope_theta 为 $10^{7}$，频率随 $u$ 迅速下降：在 merged 网格内最大约 32 个单位的位移下，只有 $\theta_u \cdot 32 \geq 0.1$ 的通道对产生可分辨的旋转，即约 $u \leq 11$ 的 12 个通道对，每个空间轴约 4 个。因此 S2 只作用于 8 个 full attention 层、每个 head 1/4 的维数，且其中只有少数通道对区分图像内部的位置。通道对的具体分配在实现时按本地代码核对。
+其中 $u$ 为通道对索引。32 个通道对按 mrope_section 为 [11, 11, 10] 交错分配给 $t$、$h$、$w$ 三个轴。由于 rope_theta 为 $10^{7}$，频率随 $u$ 迅速下降：在 merged 网格内最大约 32 个单位的位移下，只有 $\theta_u \cdot 32 \geq 0.1$ 的通道对产生可分辨的旋转，即约 $u \leq 11$ 的 12 个通道对，每个空间轴约 4 个。因此 S2 只作用于 8 个 full attention 层、每个 head 1/4 的维数，且其中只有少数通道对区分图像内部的位置。本地实现（transformers 5.17）的交错方式为：$u \equiv 0 \pmod 3$ 的 11 个通道对属于 $t$ 轴，$u = 1, 4, \ldots, 31$ 的 11 个属于 $h$ 轴，$u = 2, 5, \ldots, 29$ 的 10 个属于 $w$ 轴；可分辨图像内部位移的通道对为 $h$ 轴的 $u \in \{1, 4, 7, 10\}$ 与 $w$ 轴的 $u \in \{2, 5, 8, 11\}$。由于旋转角由浮点 position ID 计算，position ID 可以取非整数值，第 9.1 节的缩放干预利用了这一点。
 
 ### 3.2 干预接口
 
-1. **外部 position IDs。** forward 与 generate 均接受外部传入的 position_ids。本实验传入形状为 $(4, B, L)$ 的张量，第 0 行为原始一维文本位置，用于构造 attention mask，后三行为被干预的 $(t, h, w)$。传入后模型不再自行计算 MRoPE，生成阶段新 token 的 position IDs 由最后位置递增得到，实现时核对这一行为。
+1. **外部 position IDs。** 本实验使用自行实现的 greedy 解码循环，向模型传入 inputs_embeds 与形状为 $(4, B, L)$ 的 position IDs：第 0 行为序列索引，用于构造 attention mask，后三行为被干预的 $(t, h, w)$。生成阶段第 $i$ 个新 token 的三个 MRoPE 分量均为最后一个 prompt token 的 ID 加 $i$，与参考实现 generate 的行为一致。同一图像的各干预条件序列长度相同，因此以不含 padding 的 batch 解码。
 2. **替换 visual embedding。** 通过 model.model.get_image_features 取得 visual embedding，修改后按 image token 的位置写入 inputs_embeds，再执行前向；此时必须同时提供 position_ids。
-3. **ViT 位置干预。** 在 ViT 前向中替换 learned position embedding 的插值结果，或修改 ViT 2D RoPE 的行列 ID。
-4. **attention 权重。** 只有在 attn_implementation 为 eager 时返回，且只来自 full attention 层；返回值是 softmax 权重，head 的实际输出还要逐元素乘以 sigmoid gate。C1 使用 eager，其余部分使用 SDPA；实现时在 C0 的样本上核对两种实现的 greedy 输出一致。
+3. **ViT 位置干预。** ViT 前向接受外部传入的 2D RoPE 行列 ID（每个 patch 一行，按 spatial merge 块顺序排列）以及 learned position embedding 的双线性插值索引与权重；干预通过替换这三个张量实现，不修改模型代码。
+4. **attention 权重。** 全部部分均使用 SDPA。C1 在 full attention 模块的输入处以 pre-hook 记录 hidden states 与 rotary 表，按模块的计算顺序重算选定 query 位置的 $q$、gate 与全部位置的 $k$、$v$，得到 softmax 权重；再以重算的权重计算 gated 输出并与模块的实际输出比较，相对最大误差作为每个样本的正确性检查。该方式避免了 eager 实现对长序列的显存开销，且只需计算少数 query 行。
 
 ## 4. C0：基准任务与样本
 
 | 任务 | 图像 | 问题与答案格式 | 样本量 |
 | --- | --- | --- | --- |
 | 单目标定位 | 512×512 白色画布上的单个红色实心圆，直径 32、64、128 pixels，圆心位于 6×6 等距位置并加不超过 16 pixels 的随机抖动 | point 与 bbox | 3 × 36 = 108 张 |
-| 平移序列 | 同上，圆心沿水平中线与竖直中线各取 15 个位置，步长 32 pixels | point | 3 × 30 = 90 张 |
-| 自然图像 | RefCOCO 图像，取自实验 3.4 的测试划分，使用第一条 referring expression | point 与 bbox | 300 张 |
-| 行列答案 | 实验 1.3 T6 的红色目标网格，6×6、10×10、20×20 | 行列、point、bbox | 每种规模 48 张 |
+| 平移序列 | 同上，圆心沿水平中线与竖直中线以步长 32 pixels 移动，只保留圆完整位于画布内的位置（直径 32 与 64 各 15 个，直径 128 为 13 个） | point | 2 × (15 + 15 + 13) = 86 张 |
+| 画布尺寸序列 | 边长 256、384、512、768、1024、1280 pixels 的画布，圆心位于 7 个固定的相对位置，直径为边长的 1/8（不小于 32） | point | 6 × 7 = 42 张 |
+| 自然图像 | RefCOCO 图像，取自实验 3.4 的测试划分，使用第一条 referring expression | point 与 bbox | 300 张（待开展） |
+| 行列答案 | 实验 1.3 T6 的红色目标网格与原问题，6×6、10×10、20×20 | 行列、point、bbox | 每种规模 48 张 |
 
-单目标画布的边长 512 pixels 对应 16×16 的 merged 网格，圆的位置与尺度完全受控，且画布背景不提供位置线索。平移序列用于绘制输出坐标随真实位置变化的连续曲线。问题文字与答案格式沿用实验 1.2 与 1.3：坐标为 0–1000 归一化，横坐标向右增大，纵坐标向下增大。
+单目标画布的边长 512 pixels 对应 16×16 的 merged 网格，圆的位置与尺度完全受控，且画布背景不提供位置线索。平移序列用于绘制输出坐标随真实位置变化的连续曲线。画布尺寸序列在相对位置不变的条件下改变 merged 网格的规模（8×8 至 40×40），用于区分以 0–1000 计与以 pixels 计的误差，检验坐标误差是否随图像规模变化。单目标问题为 “There is one red circle in the image.” 加实验 1.3 的 point 或 bbox 格式要求；T6 使用实验 1.3 保存的图像与原问题，以本实验的解码器重新生成回答，并报告与实验 1.3 原回答的一致比例。问题文字与答案格式沿用实验 1.2 与 1.3：坐标为 0–1000 归一化，横坐标向右增大，纵坐标向下增大。
 
-评分使用 point 命中率（预测点落在圆或目标框内）、中心误差（0–1000）、bbox IoU≥0.5 的比例与行列 exact match。全部样本使用 greedy decoding，输出上限为 64 tokens，thinking off。
+评分使用 point 命中率（预测点落在圆或目标框内）、中心误差（0–1000）、bbox IoU≥0.5 的比例与行列 exact match。全部样本使用 greedy decoding，基线输出上限为 96 tokens，干预条件为 48 tokens（单目标 point 回答约 36 tokens），thinking off。
 
-**坐标 token。** Qwen 系列分词器可能把数字逐位切分，实现时先核对 0–1000 内全部整数的切分方式。若逐位切分，一个坐标值由多个 token 生成，例如 537 由 5、3、7 三个 token 组成；本实验对每个坐标 token 分别分析，并以每个坐标值的首位 token 为主要分析对象，因为首位决定坐标的百位区间，后续 token 只在首位确定后细化。
+**坐标 token。** 已核对 Qwen3.5 分词器把 0–1000 内全部整数逐位切分，一个坐标值由多个 token 生成，例如 537 由 5、3、7 三个 token 组成；本实验对每个坐标 token 分别分析，并以每个坐标值的首位 token 为主要分析对象，因为首位决定坐标的百位区间，后续 token 只在首位确定后细化。
 
 ## 5. C1：attention 读取
 
@@ -124,7 +125,7 @@ $A^{\ell}_{j}$ 是 $z$ 对该 residual 的一阶近似贡献，$\rho^{\ell}$ 是
 
 ### 5.5 比较对象
 
-每个样本比较三类 query 位置：问题末端 token（生成开始前）、横坐标首位 token、纵坐标首位 token。若问题末端 token 已经集中读取目标，而坐标 token 的 attention 分散，说明位置在生成前已被汇集到文本位置；若坐标 token 各自重新读取目标，说明坐标在生成时逐个读取。
+每个样本比较五类 query 位置：问题末端 token、`</think>` token、最后一个 prompt token（生成开始前）、横坐标首位 token、纵坐标首位 token（行列答案为行号与列号的首位 token）。“坐标 token 的 query 位置”指其 next-token 预测产生该 token 的输入位置，即该 token 的前一个位置。若问题末端 token 已经集中读取目标，而坐标 token 的 attention 分散，说明位置在生成前已被汇集到文本位置；若坐标 token 各自重新读取目标，说明坐标在生成时逐个读取。
 
 ## 6. C2：位置来源的因果干预
 
@@ -146,7 +147,8 @@ $w$ 是观测位移在预测位移方向上的投影与预测位移长度之比�
 ### 6.3 S1：ViT 位置干预
 
 1. **全局平移。** ViT 的 learned position embedding 由 48×48 的表经双线性插值（align_corners 为 True）得到。为在不外推的前提下平移，将图像视为一个更大虚拟画布的子窗口：按边长各多出 $2\mu$ 个 patch 的虚拟画布插值，再取偏移 $(\mu + \delta_r, \mu + \delta_c)$ 的窗口作为该图像的 position embedding。基线取 $\delta_r = \delta_c = 0$ 的居中窗口，使虚拟画布带来的尺度变化在基线与干预之间相同。若输出由 S1 决定，预测位移为 $1000\,\delta_c / W_p$ 与 $1000\,\delta_r / H_p$，其中 $H_p, W_p$ 为 patch 网格的行列数。
-2. **ViT RoPE 的全局平移。** ViT 的 attention 是非因果的，2D RoPE 只依赖 token 之间的相对位置，因此全部 ViT RoPE ID 同时平移后输出应严格不变。该条件作为实现正确性的检查。
+   本实验取 $\mu = 16$ 个 patch，$\delta \in \{\pm 4, \pm 8, \pm 16\}$ 个 patch，与 S2 平移的 $\pm 2, \pm 4, \pm 8$ 个 merged 单位对应相同的 pixel 位移。
+2. **ViT RoPE 的全局平移与缩放。** ViT 的 attention 是非因果的，2D RoPE 只依赖 token 之间的相对位置，因此全部 ViT RoPE ID 同时平移后输出在数学上不变，bf16 下只存在数值舍入差异。该条件作为实现正确性的检查。另以图像中心为原点把全部 ViT RoPE ID 乘以 0.5、0.8、1.25，改变 patch 之间的全部相对位移，检验 ViT 是否依据相对位移的尺度编码位置。
 3. **区域互换。** 交换 $\mathcal{T}$ 与 $\mathcal{T}'$ 对应 patch 的 position embedding，分别在只交换 position embedding、只交换 ViT RoPE ID、二者同时交换三种条件下运行。decoder 的 position IDs 保持不变。
 
 ### 6.4 S4：序列置换
@@ -169,6 +171,10 @@ $w$ 是观测位移在预测位移方向上的投影与预测位移长度之比�
 ### 6.6 自然图像
 
 RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有可以互换的空白区域。全局平移下像素内容保持不变，因此 $1 - w$ 包含了 S3 的贡献；与单目标画布的结果比较，可以估计自然图像中内容线索的额外作用。
+
+### 6.7 自然移动对照
+
+对每个区域互换条件，另把圆实际画在 $\mathcal{T}'$ 对应的位置（圆心平移 $32k$ pixels），运行未干预的模型。该条件的 $w$ 给出同等幅度的真实位移下输出的跟随程度，是其他条件的参照上限。
 
 ## 7. C3：内容交换
 
@@ -193,6 +199,16 @@ RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有
 3. **attention 记录。** 生成行序数 token 时，记录候选 head 对每行首个实例所在 token 的 attention，检查模型是否依次读取各行。
 
 若模型对实例计数，两种插行均不改变行答案；若模型按目标的位置与单元尺度换算行号，像素插行使行答案加 1，position IDs 插行在 S2 起作用时使行答案加 1。同时比较同一图像在行列格式与 point 格式下候选 head 的 attention，检查实验 1.2 中“行列正确而中心点错误”是否对应两种格式读取了不同的位置信息。
+
+### 9.1 网格定位失败的定向分析
+
+实验 1.3 给出三类网格定位失败：20×20 网格的列号多计 1、10×10 网格的中心点落入相邻单元、中心点坐标的回归斜率偏离 1。本节在 T6 的 48 张图像（20×20 行列与 point、10×10 行列与 point、6×6 行列与 point）上逐一检验三种解释：位置来源错误、读取了相邻列、以及数字生成阶段的偏差。每张图像运行以下条件，均与同一图像的标准输入比较：
+
+1. **S2 平移与缩放。** 以间隙基线为参照把图像 token 的 $p^{h}$ 或 $p^{w}$ 平移 $\pm 2, \pm 4$ 个 merged 单位（64-pixel 单元为 2 个单位）；另以图像首个 ID 为原点把 $p^{h}$ 或 $p^{w}$ 乘以 0.9、0.95、1.05、1.1（浮点 ID）。若列号多计来自 MRoPE 位置到序数的换算，压缩 $p^{w}$ 应减少列号。
+2. **S1 平移与 ViT RoPE 缩放。** learned PE 窗口平移 $\pm 4$ 个 patch（一个单元）；ViT RoPE ID 沿单一轴乘以与上一条相同的系数。
+3. **单元互换。** 以目标所在单元的 token 集合为 $\mathcal{T}$，以相邻单元（左、右、上、下各一个单元，另取三个单元的距离）为 $\mathcal{T}'$，分别进行 ViT RoPE 互换、ViT PE 与 RoPE 同时互换、MRoPE 互换、序列置换与内容交换，记录行列答案的变化量与互换位移之比（跟随比）。
+4. **候选答案打分。** 在标准输入上以 teacher forcing 计算真值 $c$、$c-1$、$c+1$ 作为列号（行号同理）时数字 token 及其后一个 token 的对数概率之和，得到 $c+1$ 相对 $c$ 的对数概率差，检查多计 1 的答案在答对的样本中是否已是接近的备选。
+5. **列 attention 分布。** 在 C1 记录的列号首位 token 上，以 6×6 行列任务选出的候选 head 计算 attention 质量在目标列附近各列的分布，比较答对与列号多计 1 的样本，检验错误是否来自读取了相邻列。
 
 ## 10. 指标汇总
 
@@ -244,8 +260,8 @@ RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有
 
 ## 13. 运行与产物
 
-1. 实验程序为 `analysis_tools/position/coordinate_readout.py`，刺激生成复用 `analysis_tools/common/stimuli.py`，作图程序为 `analysis_tools/position/coordinate_readout_figures.py`；Bash 入口为 `scripts/analysis/position/coordinate_readout.sh`，模型、部分选择（C0–C5）、干预参数与随机种子集中在脚本顶部。
-2. 产物保存于 WORK_DIR 的 `analysis/position/<日期>_coordinate_readout/`：`cases.json` 记录图像、真值与区域定义；`baseline/` 保存 C0 的 prompt、原始回答与评分；`attention/` 保存候选 head 的 attention 与归因；`interventions/` 保存每个干预条件的 position IDs 摘要、原始回答与解析坐标；`results.json` 保存全部指标与区间；`experiment.json` 保存模型版本、attention 实现、代码摘要与运行参数。
+1. 解码、干预与 attention 读取的引擎为 `analysis_tools/position/coordinate_readout.py`，各部分的运行程序为 `analysis_tools/position/coordinate_readout_run.py`（阶段 c0、spotcheck、c1、c1grad、c2、c4、fail、fail2），指标计算为 `analysis_tools/position/coordinate_readout_analysis.py`，作图程序为 `analysis_tools/position/coordinate_readout_figures.py`。单目标刺激在引擎中生成；T6 图像直接读取实验 1.3 的产物并校验 SHA-256。Bash 入口为 `scripts/analysis/position/coordinate_readout.sh`，模型、阶段、batch size、间隙 $G$ 与随机种子集中在脚本顶部。
+2. 产物保存于 WORK_DIR 的 `analysis/position/<日期>_coordinate_readout/`：`cases.json` 记录图像、真值与区域定义；`baseline/` 保存 C0 的 prompt、原始回答与评分；`attention/` 保存每个样本的 head 指标（records.jsonl）与关键 query 位置上全部 head 的 attention、有效贡献和梯度归因图（maps/）；`interventions/` 保存 C2 与 C3 每个干预条件的原始回答、解析坐标与坐标首位 token 的数字 logits；`failure/` 保存第 9.1 节的结果；`results.json` 保存全部指标与区间；`experiment.json` 保存模型版本、attention 实现、代码摘要与运行参数。
 3. 每个干预条件保存完整的原始回答，解析失败计入分母并单独统计，不以诊断解析覆盖严格解析。
 
 ## 14. 解释范围

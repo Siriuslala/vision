@@ -24,8 +24,8 @@
 1. **合成图坐标 probe（2026-09-30，已完成）。** 线性代数分析表明，decoder 的 full attention 只通过 RoPE 在 query 与 key 的内积中引入相对位置，linear attention 不含显式位置编码；但这两点不能推出 visual token 缺少位置信息，因为 ViT 已经向 visual embedding 注入 learned absolute position embedding。为检验这一判断，实验在重复几何图形上训练低容量线性 probe。结果显示 visual embedding 与所测 decoder 层均能部分读出槽位坐标，并能推广到未见模板、平移和尺寸；第 7–9 层误差最低，第 32 层误差明显上升。见[合成图实验](results_2026-09-30.md)实验 A。
 2. **文本前缀对照（2026-09-30，已完成）。** 合成图 probe 只在一种 prompt 下训练，需要检验读出是否只依赖图像内部位置。在图像之前插入 169 个文本 token 而保持像素与标签不变后，visual embedding 的预测不变，decoder 第 1 层起出现非零预测位移，第 7 层平均位移约为 0–1 坐标下的 0.115。该结果说明 decoder 中的位置读出方向受前置上下文影响，且影响从 linear attention 层开始出现。见同一报告实验 B。
 3. **真实图逐层 probe（2026-10-01，已完成）。** 合成图只有 24 张训练图，且 decoder 第 16 与第 32 层之间未采样。实验在 360 张 RefCOCO 图像上覆盖 ViT 全部 27 层与 decoder 全部 32 层。加入 ViT position embedding 后的 MAE 为 25.96（0–1000 坐标），patch content 为 248.72；decoder 误差在第 14 层最低（92.33），随后升至第 32 层的 185.29；最佳层的精确网格准确率仅为 5.59%。见[真实图实验](results_2026-10-01.md)。
-4. **位置 probe 完善（待实施）。** 真实图 probe 使用 256 维随机投影和 ridge 回归（514 个参数），训练图像只有 240 张，无法区分“位置信息在深层减少”与“低容量读出无法提取”。此外，MRoPE 只在 attention 内部临时注入相对位置，decoder 的 residual stream 可能以相对形式保留位置。实验 3.4 提高 probe 容量、扩大数据，并加入相对位置 probe。设计见[位置 probe 完善](design_probe_refinement.md)。
-5. **坐标读取路径（待实施）。** 实验 1.2 中红色目标的行列答案 3/3 正确而中心点 0/3 正确，RefCOCO 的 bbox 8/8 达到 IoU≥0.5，说明坐标输出能力依赖场景与答案格式。probe 不能回答模型在生成坐标时使用哪一种位置来源，实验 3.5 在完整模型生成坐标时测量 attention 并干预各位置来源。设计见[坐标读取路径](design_coordinate_readout.md)。
+4. **位置 probe 完善（已完成，见[结果](results_2026-10-14_probe_refinement.md)）。** 真实图 probe 使用 256 维随机投影和 ridge 回归（514 个参数），训练图像只有 240 张，无法区分“位置信息在深层减少”与“低容量读出无法提取”。此外，MRoPE 只在 attention 内部临时注入相对位置，decoder 的 residual stream 可能以相对形式保留位置。实验 3.4 提高 probe 容量、扩大数据，并加入相对位置 probe。设计见[位置 probe 完善](design_probe_refinement.md)。
+5. **坐标读取路径（部分完成，见[结果](results_2026-10-14_coordinate_readout.md)）。** 实验 1.2 中红色目标的行列答案 3/3 正确而中心点 0/3 正确，RefCOCO 的 bbox 8/8 达到 IoU≥0.5，说明坐标输出能力依赖场景与答案格式。probe 不能回答模型在生成坐标时使用哪一种位置来源，实验 3.5 在完整模型生成坐标时测量 attention 并干预各位置来源。设计见[坐标读取路径](design_coordinate_readout.md)。
 
 ## 3. 子实验与进度
 
@@ -34,8 +34,8 @@
 | 3.1 | 合成图坐标 probe | 检验重复几何图形中单个 visual token 的槽位坐标能否被低容量线性 probe 读出，并测试跨模板、平移和尺寸的推广 | 已完成；[结果](results_2026-09-30.md) |
 | 3.2 | 文本前缀对照 | 保持像素与标签不变，在图像前插入文本，用固定 probe 测量预测位移 | 已完成；[结果](results_2026-09-30.md) |
 | 3.3 | 真实图逐层 probe | 在 RefCOCO 图像上覆盖 ViT 与 decoder 全部层，测量位置可读性随深度的变化 | 已完成；[结果](results_2026-10-01.md) |
-| 3.4 | 位置 probe 完善 | 以全维 ridge、MLP probe、约 3000 张图像和学习曲线确定可读性上限，并区分绝对位置与相对位置的可读性 | 待实施；[设计](design_probe_refinement.md) |
-| 3.5 | 坐标读取路径 | 测量生成坐标 token 时的 attention，并通过 position IDs、ViT 位置编码、序列顺序与视觉内容的干预确定坐标的实际来源 | 待实施；[设计](design_coordinate_readout.md) |
+| 3.4 | 位置 probe 完善 | 以全维 ridge、MLP probe、约 3000 张图像和学习曲线确定可读性上限，并区分绝对位置与相对位置的可读性 | 已完成；[设计](design_probe_refinement.md)，[结果](results_2026-10-14_probe_refinement.md) |
+| 3.5 | 坐标读取路径 | 测量生成坐标 token 时的 attention，并通过 position IDs、ViT 位置编码、序列顺序与视觉内容的干预确定坐标的实际来源 | 部分完成（C0–C4 与网格失败定向分析；RefCOCO、C4 输出 patching、C5 待开展）；[设计](design_coordinate_readout.md)，[结果](results_2026-10-14_coordinate_readout.md) |
 
 旧计划中的两项待实施内容并入实验 3.5：
 

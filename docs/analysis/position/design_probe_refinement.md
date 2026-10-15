@@ -42,9 +42,9 @@
 
 合成图像来自[共享合成刺激集](../stimuli.md)，只用于测试与对照：
 
-1. **重复图案。** 不含异常实例的标准网格，网格规模为 6×6、10×10、20×20，四个开发模板各 16 张，并以 4 个像素相位偏移生成变体。重复图案中每个实例的内容相同，内容只提供实例内部的相对位置，不提供实例在整图中的位置。
-2. **均匀画布。** 纯白与纯灰画布，尺寸与上述网格相同，每种尺寸各 8 张。均匀画布中所有 patch 的像素相同，因此 ViT 输入端 token 之间的差异只来自 learned absolute position embedding。
-3. **保留模板。** 星形与房屋网格各 16 张，只用于合成图内部训练后的最终测试。
+1. **重复图案。** 不含异常实例的标准网格，网格规模为 6×6、10×10、20×20（前两者每个实例占 64×64 pixels，20×20 每个实例占 32×32 pixels），开发模板（person、ring、square、arrow）在每种网格规模下各 16 张。16 张图由 4 种位置偏移条件与 4 种画布留白组合而成：位置偏移条件为网格相对 token 边界平移 0、8、16 pixels，以及每个实例独立随机平移不超过 4 pixels；画布留白为在网格外额外增加 0、64、128、192 pixels，使网格在画布中的相对范围随之变化。重复图案中每个实例的内容相同，内容只提供实例内部的相对位置，不提供实例在整图中的位置。
+2. **均匀画布。** 纯白与纯灰画布，尺寸覆盖上述重复图案的画布尺寸，分为三个互不重叠的尺寸组：正方形小尺寸（边长 384–576 pixels）、正方形大尺寸（边长 640–832 pixels）与 8 种非正方形尺寸，每个尺寸各 1 张白色与 1 张灰色画布，共 32 张。均匀画布中所有 patch 的像素相同，因此 ViT 输入端 token 之间的差异只来自 learned absolute position embedding。
+3. **保留模板。** 星形与房屋网格在每种网格规模下各 16 张，生成方式与开发模板相同，只用于合成图内部训练后的最终测试。
 
 ## 4. 符号约定
 
@@ -103,13 +103,13 @@ $$
 \hat y = W_2\, \operatorname{GELU}(W_1 x + b_1) + b_2 ,
 $$
 
-其中 $W_1 \in \mathbb{R}^{m \times D}$，$b_1 \in \mathbb{R}^{m}$，$W_2 \in \mathbb{R}^{2 \times m}$，$b_2 \in \mathbb{R}^{2}$，$m$ 为隐藏层宽度。训练使用 AdamW 与均方误差，学习率与 weight decay 在验证集上从 3×3 网格中选择，并以验证集误差 early stopping。MLP 用于检验位置是否以非线性方式编码：若 MLP 显著优于全维 ridge，说明位置信息存在但不在线性可读的方向上。
+其中 $W_1 \in \mathbb{R}^{m \times D}$，$b_1 \in \mathbb{R}^{m}$，$W_2 \in \mathbb{R}^{2 \times m}$，$b_2 \in \mathbb{R}^{2}$，$m$ 为隐藏层宽度。训练使用 AdamW 与均方误差，batch size 为 1024，最多 25 个 epoch，并以验证集误差 early stopping（patience 为 4 个 epoch）。MLP256 的学习率与 weight decay 在验证集上从 $\{3\times10^{-4}, 10^{-3}, 3\times10^{-3}\} \times \{0.01, 0.1, 1\}$ 的 3×3 网格中选择；MLP64 与 MLP1024 沿用 MLP256 选出的 weight decay，只在验证集上选择学习率。MLP 用于检验位置是否以非线性方式编码：若 MLP 显著优于全维 ridge，说明位置信息存在但不在线性可读的方向上。
 
 更高容量的 probe 也更容易利用视觉内容与位置的统计相关性（例如天空多位于图像上方），因此每种 probe 都在 patch content 上拟合同样的对照（见 5.5），以 probe 族为单位比较位置增益。
 
 ### 5.2 特征提取与存储
 
-Ridge probe 对全部 62 个提取位置逐图累加 $C$ 与 $U$，每个 4096 维提取位置的 $C$ 以 float64 存储约需 134 MB，不保存 token 特征。MLP probe 与相对位置 probe 需要保存特征，只在以下提取位置进行：patch content、加入 position embedding 后的 ViT 输入、ViT 第 9、18、27 层、merger，以及 decoder 第 4、8、12、14、16、20、24、28、32 层。每个 decoder 提取位置的训练特征约 1.3 GB（2400 张图 × 64 个 token × 4096 维 × float16）。
+Ridge probe 对全部 62 个提取位置逐图累加 $C$ 与 $U$，每个 4096 维提取位置的 $C$ 以 float64 存储约需 134 MB，不保存 token 特征。前向传播时，每张图的统计量先在 GPU 上以 float32 累加：特征减去该提取位置第一张图的 token 均值，标签减去 500，以避免大均值造成的舍入误差；每 25 张图将平移后的统计量换算回原始矩并加入 CPU 上的 float64 累加器。测试图像的 ridge 预测在第二次前向传播中由已拟合的 probe 直接计算。MLP probe 与相对位置 probe 需要保存特征，只在以下提取位置进行：patch content、加入 position embedding 后的 ViT 输入、ViT 第 9、18、27 层、merger，以及 decoder 第 3、4、5、7、8、9、11、12、13、14、15、16、17、20、24、28、32 层；其中第 4、8、12、16 层 full attention 两侧的 Gated DeltaNet 层用于比较两类层的读出精度。每个 decoder 提取位置的训练特征约 1.3 GB（2400 张图 × 64 个 token × 4096 维 × float16）。
 
 ### 5.3 学习曲线
 
@@ -139,8 +139,10 @@ $$
 其中 $\omega_k = \pi k / 1000$，$K = 8$，最低频率的周期为 2000 个坐标单位，大于位移的取值范围，因此 $\phi$ 在位移范围内可以唯一解码。$\phi$ 的第 $j$ 个分量由一个低秩双线性形式预测：
 
 $$
-\hat\phi_j = (A_j x_a)^{\mathsf T} (G_j x_b), \qquad A_j, G_j \in \mathbb{R}^{\rho \times D},\quad \rho = 16 .
+\hat\phi_j = (A_j P x_a)^{\mathsf T} (G_j P x_b) + c_j, \qquad A_j, G_j \in \mathbb{R}^{\rho \times 512},\quad \rho = 16 .
 $$
+
+其中 $P$ 与 R2 相同，为白化后的 PCA 投影，$c_j$ 为标量偏置。等价地，特征空间中的双线性矩阵为 $P^{\mathsf T} A_j^{\mathsf T} G_j P$，秩不超过 16；先投影到 512 维使参数量从约 4.2M 降至约 0.5M，在 2400 张训练图上可以稳定训练。$A_j$ 与 $G_j$ 以小方差初始化，使初始输出接近 0。
 
 预测位移取候选位移集合中使 $\phi(\Delta)^{\mathsf T} \hat\phi$ 最大的值，候选集合为步长 5 个坐标单位的二维网格。
 
@@ -215,8 +217,8 @@ $$
 
 ## 9. 运行与产物
 
-1. 实验程序为 `analysis_tools/position/position_probe_refinement.py`，作图程序扩展 `analysis_tools/position/position_figures.py`，Bash 入口为 `scripts/analysis/position/position_probe_refinement.sh`，模型、数据规模、提取位置、probe 列表与随机种子集中在脚本顶部。
-2. 产物保存于 WORK_DIR 的 `analysis/position/<日期>_probe_refinement/`：`cases.json` 记录图像来源、hash、划分、尺寸与网格；`stats/` 保存 ridge 的充分统计量；`features/` 保存选定层的采样特征；`results.json` 保存全部指标、区间与基线；`predictions.npz` 保存测试集预测；`experiment.json` 保存模型版本、代码摘要与运行参数。
+1. 实验程序为 `analysis_tools/position/position_probe_refinement.py`，MLP、相对位置 probe、合成图内部 probe 与评估程序为 `analysis_tools/position/position_probe_refinement_probes.py`，作图程序为 `analysis_tools/position/position_probe_refinement_figures.py`，Bash 入口为 `scripts/analysis/position/position_probe_refinement.sh`，模型、数据规模、提取位置、probe 列表与随机种子集中在脚本顶部。
+2. 产物保存于 WORK_DIR 的 `analysis/position/<日期>_probe_refinement/`，该路径链接到 DATA_DIR 下的同名存储目录（全部产物约 80 GB，超出 WORK_DIR 的用户配额）：`cases.json` 记录图像来源、hash、划分、尺寸与网格；`stats/` 保存 ridge 的充分统计量；`ridge/` 保存拟合后的 ridge 映射；`features/` 保存选定层的采样特征与合成图的全部 token 特征；`predictions/` 保存 ridge 的逐 token 测试预测；`probes/` 保存 MLP、相对位置与合成图内部 probe 的预测与日志；`results.json` 保存全部指标、区间与基线；`extract_trainval.json` 与 `extract_test.json` 保存模型版本、代码摘要与运行参数。
 3. 实验 2.3 属性 probe 复用本实验的特征提取与数据划分代码。
 
 ## 10. 解释范围

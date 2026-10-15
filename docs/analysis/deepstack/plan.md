@@ -172,6 +172,8 @@ Qwen3-VL 以 DeepStack 训练，关闭注入会使 decoder 前三层的 hidden s
 
 评测使用 4.2 的子集：BabyVision 中 Find the different、Fine-grained Discrimination 与 Visual Tracking 三个子类型；实验 1.3 的 T1、T2、T3、T5、T6，限于缺口与颜色两种变化及 6×6、10×10、20×20 三种网格；RefCOCO 三个面积层。所有条件在相同样本上运行，成对比较使用 McNemar 检验，预先指定的主要对比为 Off 对 Full、Blur 对 Full、Mean 对 Full，多重比较使用 Holm 校正。Qwen3-VL-4B-Instruct 在主要对比上重复，检验结论是否随规模保持一致。
 
+依据 4.2 的结果，4.3 以两类任务为主要评测：T1 与 T2 中色差 10–20 的颜色变化，以及 T5、T6 在 10×10 与 20×20 网格上的坐标点与 bbox 输出，同时记录行列答案；Qwen3-VL-4B-Instruct 另加缺口条件，用于检验缺口判断差异的规模依赖。BabyVision 作为次要指标，所有条件统一采用 4096 tokens 的输出上限。
+
 ## 7. 实验 4.4：表征对照
 
 ### 7.1 设计
@@ -233,6 +235,6 @@ $$
 | 编号 | 子实验 | 设计目的 | 状态 |
 | --- | --- | --- | --- |
 | 4.1 | 文献与官方说明调研 | 整理 DeepStack 原始设计、Qwen3-VL 消融与 Qwen3.5 的公开信息 | 已完成，见第 2 节 |
-| 4.2 | 端到端对照 | 比较两类模型在 BabyVision、能力分解与小目标定位上的差异 | 待实施 |
+| 4.2 | 端到端对照 | 比较两类模型在 BabyVision、能力分解与小目标定位上的差异 | 已完成，见[结果](results_2026-10-14_end_to_end.md)：DeepStack 族只在单实例颜色判断与大网格坐标输出上两组一致占优 |
 | 4.3 | DeepStack 消融 | 在 Qwen3-VL 内部关闭或替换注入，测量对细粒度任务的选择性依赖 | 待实施 |
 | 4.4 | 表征对照 | 比较注入特征、ViT 各层与 decoder 前部的细节可读性 | 待实施，依赖 2.3 与 2.4 的工具 |

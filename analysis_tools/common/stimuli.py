@@ -401,3 +401,108 @@ def uniform_targets(rows: int, cols: int, count: int, seed: int) -> list[tuple[i
     rng = np.random.default_rng(seed)
     flat = rng.integers(0, rows * cols, count)
     return [(int(i) // cols, int(i) % cols) for i in flat]
+
+
+# ----------------------------------------------------------------------------- ring layout
+# Additive extension (2026-10-14): instances on a circle instead of rows and columns.  The grid
+# generator above is untouched, so every StimulusSpec still renders byte-identical images.
+
+@dataclass(frozen=True)
+class RingSpec:
+    """N instances whose cell centres lie evenly on one circle centred in a square canvas.
+
+    Instance 0 sits at 12 o'clock and indices increase clockwise, so instance k has the
+    angle 360 * k / n degrees measured clockwise from the top.  Cell top-left corners are
+    rounded to integer pixels; only instances on the axes are aligned to the 32-pixel token
+    grid (the canvas centre is a token corner and ``radius`` must be a multiple of 32).
+    target: zero-based index of the minority instance, or None for a normal image.
+    """
+    template: str
+    n: int
+    radius: int
+    canvas: int
+    change: Change = NONE
+    target: int | None = None
+    cell: int = 64
+    seed: int = 0
+
+    def __post_init__(self):
+        if self.template not in TEMPLATE_DEFS:
+            raise ValueError(f'Unknown template {self.template!r}')
+        if self.n < 2:
+            raise ValueError('a ring needs at least 2 instances')
+        if self.cell % TOKEN_PIXELS or self.radius % TOKEN_PIXELS or self.canvas % (2 * TOKEN_PIXELS):
+            raise ValueError('cell and radius must be multiples of 32 and canvas a multiple of 64 pixels')
+        if self.canvas < MIN_CANVAS:
+            raise ValueError(f'canvas must be at least {MIN_CANVAS} pixels')
+        if self.radius + self.cell / 2 > self.canvas / 2:
+            raise ValueError('ring cells extend beyond the canvas')
+        if not ring_cells_disjoint(self.n, self.radius, self.cell):
+            raise ValueError(f'{self.n} cells of {self.cell} px overlap on a ring of radius {self.radius}')
+        if self.target is not None and not 0 <= self.target < self.n:
+            raise ValueError(f'target {self.target} outside 0..{self.n - 1}')
+        if self.change.kind != 'none' and self.target is None:
+            raise ValueError('A change requires a target instance')
+        if self.template in SYMMETRY_EXCLUSIONS.get(self.change.kind, set()):
+            raise ValueError(f'{self.change.kind} leaves template {self.template!r} unchanged')
+
+
+def ring_offsets(n: int, radius: float) -> list[tuple[float, float]]:
+    """Exact (dx, dy) of each cell centre from the canvas centre; y grows downward."""
+    return [(radius * math.sin(2 * math.pi * k / n), -radius * math.cos(2 * math.pi * k / n)) for k in range(n)]
+
+
+def ring_cells_disjoint(n: int, radius: float, cell: int) -> bool:
+    """True if no two axis-aligned cells of side ``cell`` overlap (after integer rounding)."""
+    corners = [(round(dx - cell / 2), round(dy - cell / 2)) for dx, dy in ring_offsets(n, radius)]
+    return all(abs(a[0] - b[0]) >= cell or abs(a[1] - b[1]) >= cell
+               for i, a in enumerate(corners) for b in corners[i + 1:])
+
+
+def min_ring_radius(n: int, cell: int = 64) -> int:
+    """Smallest multiple of 32 pixels at which n cells on the ring do not overlap."""
+    radius = TOKEN_PIXELS
+    while not ring_cells_disjoint(n, radius, cell):
+        radius += TOKEN_PIXELS
+    return radius
+
+
+def generate_ring(spec: RingSpec) -> tuple[Image.Image, dict]:
+    """Render a ring stimulus and return (image, metadata) with full ground truth."""
+    size, centre = spec.canvas, spec.canvas // 2
+    canvas = np.full((size, size, 3), WHITE, np.uint8)
+    cache: dict[Change, np.ndarray] = {}
+    instances = []
+    for k, (dx, dy) in enumerate(ring_offsets(spec.n, spec.radius)):
+        change = spec.change if spec.target == k else NONE
+        if change not in cache:
+            cache[change] = render_instance(spec.template, change, spec.cell)
+        tile = cache[change]
+        x0, y0 = round(centre + dx - spec.cell / 2), round(centre + dy - spec.cell / 2)
+        region = canvas[y0:y0 + spec.cell, x0:x0 + spec.cell]
+        np.minimum(region, tile, out=region)
+        dark = np.argwhere((tile < WHITE).any(-1))
+        (ty0, tx0), (ty1, tx1) = dark.min(0), dark.max(0) + 1
+        box = [float(x0 + tx0), float(y0 + ty0), float(x0 + tx1), float(y0 + ty1)]
+        point = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]
+        instances.append({
+            'index': k, 'angle_deg': 360 * k / spec.n,
+            'cell_box': [x0, y0, x0 + spec.cell, y0 + spec.cell], 'tight_box': box, 'center': point,
+            'center_norm': [1000 * point[0] / size, 1000 * point[1] / size],
+            'cell_center': [x0 + spec.cell / 2, y0 + spec.cell / 2],
+            'token_aligned': x0 % TOKEN_PIXELS == 0 and y0 % TOKEN_PIXELS == 0,
+            'change': asdict(change), 'is_target': spec.target == k,
+        })
+    image = Image.fromarray(canvas)
+    buffer = io.BytesIO()
+    image.save(buffer, format='PNG')
+    metadata = {
+        'generator': GENERATOR_VERSION, 'layout': 'ring',
+        'spec': {**asdict(spec), 'change': asdict(spec.change)},
+        'magnitude': spec.change.magnitude,
+        'canvas': [size, size], 'ring_center': [centre, centre],
+        'patch_grid': [size // 16, size // 16], 'merged_grid': [size // TOKEN_PIXELS, size // TOKEN_PIXELS],
+        'instances': instances,
+        'sha256': hashlib.sha256(buffer.getvalue()).hexdigest(),
+    }
+    return image, metadata
