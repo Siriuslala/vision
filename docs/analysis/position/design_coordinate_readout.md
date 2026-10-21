@@ -74,7 +74,7 @@ $$
 | 单目标定位 | 512×512 白色画布上的单个红色实心圆，直径 32、64、128 pixels，圆心位于 6×6 等距位置并加不超过 16 pixels 的随机抖动 | point 与 bbox | 3 × 36 = 108 张 |
 | 平移序列 | 同上，圆心沿水平中线与竖直中线以步长 32 pixels 移动，只保留圆完整位于画布内的位置（直径 32 与 64 各 15 个，直径 128 为 13 个） | point | 2 × (15 + 15 + 13) = 86 张 |
 | 画布尺寸序列 | 边长 256、384、512、768、1024、1280 pixels 的画布，圆心位于 7 个固定的相对位置，直径为边长的 1/8（不小于 32） | point | 6 × 7 = 42 张 |
-| 自然图像 | RefCOCO 图像，取自实验 3.4 的测试划分，使用第一条 referring expression | point 与 bbox | 300 张（待开展） |
+| 自然图像 | RefCOCO 图像，取自实验 3.4 的测试划分（长边 512 pixels 的副本），使用该图像所在 RefCOCO 记录的第一条 referring expression 与对应 bbox | point 与 bbox | 300 张 |
 | 行列答案 | 实验 1.3 T6 的红色目标网格与原问题，6×6、10×10、20×20 | 行列、point、bbox | 每种规模 48 张 |
 
 单目标画布的边长 512 pixels 对应 16×16 的 merged 网格，圆的位置与尺度完全受控，且画布背景不提供位置线索。平移序列用于绘制输出坐标随真实位置变化的连续曲线。画布尺寸序列在相对位置不变的条件下改变 merged 网格的规模（8×8 至 40×40），用于区分以 0–1000 计与以 pixels 计的误差，检验坐标误差是否随图像规模变化。单目标问题为 “There is one red circle in the image.” 加实验 1.3 的 point 或 bbox 格式要求；T6 使用实验 1.3 保存的图像与原问题，以本实验的解码器重新生成回答，并报告与实验 1.3 原回答的一致比例。问题文字与答案格式沿用实验 1.2 与 1.3：坐标为 0–1000 归一化，横坐标向右增大，纵坐标向下增大。
@@ -170,7 +170,10 @@ $w$ 是观测位移在预测位移方向上的投影与预测位移长度之比�
 
 ### 6.6 自然图像
 
-RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有可以互换的空白区域。全局平移下像素内容保持不变，因此 $1 - w$ 包含了 S3 的贡献；与单目标画布的结果比较，可以估计自然图像中内容线索的额外作用。
+RefCOCO 的问题为 “Locate the object described as: {expression}.” 加与单目标任务相同的 point 或 bbox 格式要求。干预分为两组：
+
+1. **全局平移。** 与单目标画布相同，MRoPE 的 $(p^{h}, p^{w})$ 以间隙基线为参照平移 $\pm 2, \pm 4, \pm 8$ 个 merged 单位，learned PE 窗口平移相同的像素距离，另以 ViT RoPE ID 整体平移检查数值噪声。全局平移下像素内容保持不变，因此 $1 - w$ 包含了 S3 的贡献；与单目标画布的结果比较，可以估计自然图像中内容线索的额外作用。
+2. **区域互换。** 全局平移无法检验 ViT RoPE，因为 ViT RoPE 只编码 patch 之间的相对位移，整体平移在数学上不改变 ViT 的输出。为检验“ViT RoPE 主导”能否推广到自然图像，对目标 token 集合 $\mathcal{T}$ 构造平移副本 $\mathcal{T}'$：沿横向或纵向把 $\mathcal{T}$ 平移其自身跨度加 1 个 token，方向取空余较大的一侧，只保留 $\mathcal{T}'$ 完全位于图像内的样本。在 $\mathcal{T}$ 与 $\mathcal{T}'$ 之间分别交换 ViT RoPE ID、ViT PE 与 RoPE、MRoPE ID、序列槽位（序列置换）与 visual embedding（内容交换），按 6.1 节计算 $w$。与单目标画布不同，$\mathcal{T}'$ 内含有其他物体，因此互换同时把另一块内容的位置标签换到 $\mathcal{T}$；输出移向 $\mathcal{T}'$ 的程度仍然反映目标内容所携带的位置标签的作用。
 
 ### 6.7 自然移动对照
 
@@ -190,6 +193,13 @@ RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有
 1. **均值消融。** 将候选 head 的门控输出（gate 之后、output projection 之前）替换为该 head 在 C0 全部样本、同一 query 位置类型上的平均值，测量坐标中心误差与目标识别 logit 差的变化。坐标误差显著上升而识别不变，说明该 head 专门负责位置读取。对照为从相同层中随机抽取同数量的 head，重复 20 次。对 linear attention 层中 $\rho^{\ell}$ 最高的层，同样消融其 head 输出作为补充。
 2. **输出 patching。** 取目标位于 $\mathcal{T}$ 的 run A 与目标位于 $\mathcal{T}'$ 的 run B（两张图尺寸相同，序列长度相同）。在 run A 的全部生成步中，用 run B 对应位置的候选 head 输出替换 run A 的输出，自由生成坐标，并以 $d$ 为 $\mathcal{T}'$ 中心减去 $\mathcal{T}$ 中心计算 $w$。逐个 head 与候选集合整体分别进行。若 patching 候选集合使 $w$ 接近 1，说明这些 head 的输出足以携带目标位置。
 
+### 8.1 实现
+
+1. **run B 与 token 对齐。** run B 为 6.7 节的自然移动图像，即把圆实际画在 $\mathcal{T}'$ 对应的位置；$\mathcal{T}'$ 取 6.1 节中相距 4 个 merged 单元的横向与纵向位置，相距 2 与 6 个单元的位置只运行少数 head 集合。run A 与 run B 放在同一 batch 中解码，run B 的每一步输入强制取 run A 当步生成的 token，因此两行在每一步都处于相同的文本上下文，被替换的 head 输出只在图像内容上不同。替换从最后一个 prompt token 开始，覆盖全部生成步；替换位置为 output projection 的输入，即 gate 之后的 head 输出。
+2. **head 集合。** 指向分数定义为 C1 选择集上坐标首位 token 的平均 $\log E$，对 8 层共 128 个 full attention head 排序。patching 的集合包括：5 个候选 head 各自单独替换、5 个候选 head 整体、C4 均值消融所用的 7 个 head、指向分数前 10、20、40 个 head、全部 128 个 head、每个 full attention 层的全部 16 个 head、与 5 个候选 head 同层的 3 组随机 head。层 20 另做逐 head 扫描：只替换一个 head，以及替换除一个 head 以外的 15 个 head。
+3. **linear attention 层。** Gated DeltaNet 层没有可单独解释的 attention 矩阵，以整层 token mixer 的输出（out_proj 的输入）为单位替换，分为层 1–11、层 13–23（$\rho^{\ell}$ 的峰值区间及其之前）、层 25–31 与全部 24 层；另以“全部 token mixer”（128 个 full attention head 与 24 个 Gated DeltaNet 层）作为上限检查，此时 run A 答案位置的 residual 与 run B 完全相同，输出应与 run B 一致。
+4. **冗余结构。** 均值消融按指向分数取前 5、10、20、40、64、128 个 head，对照为从指向分数前 40 以外的 head 中随机抽取同样数量的 3 组；另消融每个 full attention 层的全部 head、Gated DeltaNet 层组的整层输出，以及层 16 与层 20 的组合。均值取自 32 个单目标 point 样本 teacher forcing 下答案位置的平均输出。为检验坐标信息是否在生成开始前已经由问题文本位置读取，部分集合另从图像之后的第一个 token 开始消融。
+
 ## 9. C5：行列答案
 
 行列序数需要对实例计数，读取方式可能与 point 不同。本部分在 C2 之后开展，样本为 T6 中行列答对的网格。
@@ -197,6 +207,8 @@ RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有
 1. **像素层面插行。** 在目标所在行的上方插入一条高度为一个实例单元的空白带，画布相应增高。目标的行序数不变，像素位置下移一个单元。
 2. **position IDs 层面插行。** 像素不变，把目标上方插入点以下全部 token 的 $p^{h}$ 增加一个单元对应的 merged 行数（64-pixel 单元为 2），图像之后的文本 IDs 相应顺延。
 3. **attention 记录。** 生成行序数 token 时，记录候选 head 对每行首个实例所在 token 的 attention，检查模型是否依次读取各行。
+
+实际执行时，空白带的颜色与背景相同，宽度为一个单元（64 pixels），同时在目标所在列的左侧插入等宽的竖直空白带，以检验列号。插入位置另取画布顶边（左边）与底边（右边）：插在顶边时目标与整个网格一起下移，插在底边时目标的像素位置不变而画布同样增大，作为画布尺寸变化的对照。position IDs 层面插入时，图像之后文本的 MRoPE ID 按图像最大 ID 的增量顺延。样本为 T6 全部 144 张行列格式图像，结果按基线答对的样本报告。
 
 若模型对实例计数，两种插行均不改变行答案；若模型按目标的位置与单元尺度换算行号，像素插行使行答案加 1，position IDs 插行在 S2 起作用时使行答案加 1。同时比较同一图像在行列格式与 point 格式下候选 head 的 attention，检查实验 1.2 中“行列正确而中心点错误”是否对应两种格式读取了不同的位置信息。
 
@@ -260,7 +272,7 @@ RefCOCO 样本只运行全局平移（S2 与 S1），因为自然图像中没有
 
 ## 13. 运行与产物
 
-1. 解码、干预与 attention 读取的引擎为 `analysis_tools/position/coordinate_readout.py`，各部分的运行程序为 `analysis_tools/position/coordinate_readout_run.py`（阶段 c0、spotcheck、c1、c1grad、c2、c4、fail、fail2），指标计算为 `analysis_tools/position/coordinate_readout_analysis.py`，作图程序为 `analysis_tools/position/coordinate_readout_figures.py`。单目标刺激在引擎中生成；T6 图像直接读取实验 1.3 的产物并校验 SHA-256。Bash 入口为 `scripts/analysis/position/coordinate_readout.sh`，模型、阶段、batch size、间隙 $G$ 与随机种子集中在脚本顶部。
+1. 解码、干预与 attention 读取的引擎为 `analysis_tools/position/coordinate_readout.py`，各部分的运行程序为 `analysis_tools/position/coordinate_readout_run.py`（阶段 c0、spotcheck、c1、c1grad、c2、c4、fail、fail2），补充阶段（c4patch、c4l20、c4redund、c4post、rc0、rc1、rc2、c5）的程序为 `analysis_tools/position/coordinate_readout_supp.py`，其指标与作图程序为 `analysis_tools/position/coordinate_readout_supp_analysis.py`，指标计算为 `analysis_tools/position/coordinate_readout_analysis.py`，作图程序为 `analysis_tools/position/coordinate_readout_figures.py`。单目标刺激在引擎中生成；T6 图像直接读取实验 1.3 的产物并校验 SHA-256。Bash 入口为 `scripts/analysis/position/coordinate_readout.sh`，模型、阶段、batch size、间隙 $G$ 与随机种子集中在脚本顶部。
 2. 产物保存于 WORK_DIR 的 `analysis/position/<日期>_coordinate_readout/`：`cases.json` 记录图像、真值与区域定义；`baseline/` 保存 C0 的 prompt、原始回答与评分；`attention/` 保存每个样本的 head 指标（records.jsonl）与关键 query 位置上全部 head 的 attention、有效贡献和梯度归因图（maps/）；`interventions/` 保存 C2 与 C3 每个干预条件的原始回答、解析坐标与坐标首位 token 的数字 logits；`failure/` 保存第 9.1 节的结果；`results.json` 保存全部指标与区间；`experiment.json` 保存模型版本、attention 实现、代码摘要与运行参数。
 3. 每个干预条件保存完整的原始回答，解析失败计入分母并单独统计，不以诊断解析覆盖严格解析。
 

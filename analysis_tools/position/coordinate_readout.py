@@ -539,3 +539,134 @@ def token_centers(grid: tuple[int, int]) -> np.ndarray:
     H, W = grid
     r, c = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
     return np.stack([(c.ravel() + 0.5) / W * 1000, (r.ravel() + 0.5) / H * 1000], 1)
+
+
+# ----------------------------------------------------------------------------- token-mixer edits (C4)
+
+def mixer_projection(rt: qr.Runtime, layer: int) -> tuple[torch.nn.Module, int]:
+    """Output projection of the token mixer of a 1-based decoder layer and its per-head width.
+
+    Full-attention layers: o_proj, whose input is the concatenation of gated head outputs.
+    Gated DeltaNet layers: out_proj, whose input is the concatenation of normed, gated value heads.
+    """
+    block = rt.layers[layer - 1]
+    if block.block_type == 'full_attention':
+        return block.self_attn.o_proj, block.self_attn.head_dim
+    return block.linear_attn.out_proj, block.linear_attn.head_v_dim
+
+
+class MixerEdit:
+    """Row-wise edits of token-mixer outputs (output-projection inputs) inside one batched forward.
+
+    ops: list of (row, layer, head, source) where head = -1 addresses the whole mixer output of the
+    layer, and source is either an int (copy the slice from that batch row, i.e. activation patching)
+    or the string 'mean' (replace the slice with means[(layer, head)], i.e. mean ablation).
+    Only positions >= start are edited during prefill (the last prompt token onward); every decoding
+    step is edited. Copies always read the unedited input, so source rows must not be edited rows.
+    """
+
+    def __init__(self, rt: qr.Runtime, ops: list[tuple[int, int, int, int | str]], start: int,
+                 means: dict | None = None):
+        self.handles = []
+        by_layer: dict[int, list] = {}
+        for op in ops:
+            by_layer.setdefault(op[1], []).append(op)
+        for layer, lops in by_layer.items():
+            module, hd = mixer_projection(rt, layer)
+
+            def pre(module, args, lops=lops, hd=hd):
+                x = args[0]
+                lo = start if x.shape[1] > 1 else 0
+                y = x.clone()
+                for row, l, h, src in lops:
+                    sl = slice(None) if h < 0 else slice(h * hd, (h + 1) * hd)
+                    if src == 'mean':
+                        y[row, lo:, sl] = means[(l, h)].to(x.dtype)
+                    else:
+                        y[row, lo:, sl] = x[src, lo:, sl]
+                return (y,)
+            self.handles.append(module.register_forward_pre_hook(pre))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        for h in self.handles:
+            h.remove()
+
+
+@torch.inference_mode()
+def greedy_follow(rt: qr.Runtime, x: torch.Tensor, pos: torch.Tensor, follow: dict[int, int],
+                  max_new_tokens: int = 48) -> list[dict]:
+    """Greedy decoding in which follower rows are fed the tokens chosen by their leader rows.
+
+    follow: follower row -> leader row. A follower is the source run of a patching pair: it must see
+    the same answer prefix as the patched (leader) row so that both rows are at the same token
+    context at every step. Rows that are not followers decode freely. Returns one dict per row; a
+    follower's text is the leader's text by construction.
+    """
+    B, L, _ = x.shape
+    eos = eos_ids(rt)
+    leaders = [b for b in range(B) if b not in follow]
+    out = rt.model(inputs_embeds=x, position_ids=pos, use_cache=True, logits_to_keep=1)
+    cache = out.past_key_values
+    logits = out.logits[:, -1].float()
+    nxt_mrope = pos[1:, :, -1] + 1
+    tokens = [[] for _ in range(B)]
+    done = torch.zeros(B, dtype=torch.bool)
+    embed = rt.model.model.get_input_embeddings()
+    for step in range(max_new_tokens):
+        tok = logits.argmax(-1).cpu()
+        for f, l in follow.items():
+            tok[f] = tok[l]
+        for b in range(B):
+            if not done[b]:
+                tokens[b].append(int(tok[b]))
+        done |= torch.tensor([int(t) in eos for t in tok.tolist()])
+        if bool(done[leaders].all()) or step == max_new_tokens - 1:
+            break
+        p = torch.cat([torch.full((1, B), L + step, device=x.device, dtype=pos.dtype),
+                       nxt_mrope + step], 0)[:, :, None]
+        out = rt.model(inputs_embeds=embed(tok.to(x.device)[:, None]), position_ids=p, past_key_values=cache,
+                       use_cache=True)
+        cache = out.past_key_values
+        logits = out.logits[:, -1].float()
+    results = []
+    for b in range(B):
+        ids = tokens[b]
+        results.append({'text': rt.tokenizer.decode(ids, skip_special_tokens=True), 'ids': ids,
+                        'finish_reason': 'eos' if ids and ids[-1] in eos else 'length'})
+    return results
+
+
+# ----------------------------------------------------------------------------- inserted bands (C5)
+
+def insert_band(image: Image.Image, axis: str, at: int, width: int, fill=(255, 255, 255)) -> Image.Image:
+    """Insert a blank band of `width` pixels before pixel row (axis 'v') or column (axis 'h') `at`."""
+    w, h = image.size
+    if axis == 'v':
+        out = Image.new('RGB', (w, h + width), fill)
+        out.paste(image.crop((0, 0, w, at)), (0, 0))
+        out.paste(image.crop((0, at, w, h)), (0, at + width))
+    else:
+        out = Image.new('RGB', (w + width, h), fill)
+        out.paste(image.crop((0, 0, at, h)), (0, 0))
+        out.paste(image.crop((at, 0, w, h)), (at + width, 0))
+    return out
+
+
+def insert_ids(prep: Prepared, axis: str, at: int, units: int) -> torch.Tensor:
+    """Position-ID insertion: image tokens at merged row (axis 'v') or column ('h') >= at get +units on
+    that MRoPE axis; text after the image is shifted by the resulting increase of the image's max id."""
+    pos = prep.pos.clone()
+    s, e = prep.span['start'], prep.span['end']
+    H, W = prep.grid
+    idx = torch.arange(H * W, device=pos.device)
+    sel = (idx // W >= at) if axis == 'v' else (idx % W >= at)
+    row = 2 if axis == 'v' else 3
+    old_max = pos[1:, :, s:e].max()
+    img = pos[:, :, s:e].clone()
+    img[row, :, sel] += units
+    pos[:, :, s:e] = img
+    pos[1:, :, e:] += pos[1:, :, s:e].max() - old_max
+    return pos

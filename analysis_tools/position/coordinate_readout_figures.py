@@ -192,47 +192,72 @@ def fig_c1_centroid(d: dict, res: dict, out: Path) -> None:
 
 
 def fig_c1_overlay(d: dict, res: dict, out: Path, run: Path) -> None:
-    """Attention of the top candidate head at the first digit of each coordinate, over the input image."""
+    """Attention over the visual tokens at the coordinate-value queries, on one fixed colour scale.
+
+    Bug-fix revision (2026-10-16, experiment 2.5e): every panel uses the same logarithmic scale of the
+    share of the query's image attention per token (colorbar), the queries are the positions predicting
+    the first digit of each coordinate value (no prompt-token panel), target tokens are outlined and the
+    causal reader L20 H11 is shown next to the attention-selected candidate head.
+    """
+    from matplotlib.colors import LogNorm
+    from matplotlib.patches import Rectangle
     pos = positions(d)
+    norm = LogNorm(1e-4, 1.0)
     picks = []
-    att = {r['id']: r for r in d['attention']}
-    for task, want_correct in (('disc_point', True), ('t6g20_rowcol', False)):
+    for task, want_correct, title in (('disc_point', True, 'disc, correct'), ('disc_point', False, 'disc, wrong'),
+                                      ('t6g20_rowcol', False, '20x20 grid, column +1')):
         if task not in res['c1'] or not res['c1'][task]['candidates']:
             continue
-        recs = [r for r in d['attention'] if (('disc_' if r['set'] in ('grid', 'trans') else f"t6g{r['grid'][0] // 2:02d}_")
-                                                + r['format']) == task and r['correct'] == want_correct]
+        recs = [r for r in d['attention'] if r.get('status', 'ok') == 'ok' and
+                (('disc_' if r['set'] in ('grid', 'trans') else f"t6g{r['grid'][0] // 2:02d}_") + r['format']) == task
+                and r['correct'] == want_correct and r['id'] in pos]
         if task == 't6g20_rowcol':
             recs = [r for r in recs if r['score'].get('d_col') == 1 and r['score'].get('d_row') == 0] or recs
-        # Grid tasks use heads selected on the 6x6 row-column task, where nearly all answers are correct.
         source = 't6g06_rowcol' if task.startswith('t6') and 't6g06_rowcol' in res['c1'] else task
         if recs:
-            picks.append((task, recs[0], res['c1'][source]['candidates']['heads'][0]))
+            picks.append((title, recs[0], tuple(res['c1'][source]['candidates']['heads'][0])))
     if not picks:
         return
-    fig, axes = plt.subplots(len(picks), 3, figsize=(12, 4.2 * len(picks)), squeeze=False)
-    for row, (task, rec, (layer, head)) in enumerate(picks):
+    fig, axes = plt.subplots(len(picks), 5, figsize=(19, 3.9 * len(picks)), squeeze=False)
+    im = None
+    for row, (title, rec, (layer, head)) in enumerate(picks):
         case = d['cases'][rec['id']]
         image, truth, _ = case_input(case)
         maps = np.load(run / 'attention' / 'maps' / f"{rec['id']}.npz")
         H, W = rec['grid']
-        li = FULL_LAYERS.index(layer)
-        labels = ['last prompt token'] + (['row value', 'column value'] if case['format'] == 'rowcol' else ['x value', 'y value'])
-        for j, k in enumerate([2, 3, 4]):
-            a = maps['attn'][li, head, k].astype(float).reshape(H, W)
+        o, t = pos[rec['id']]
+        size = np.asarray(image.size, float)
+        names = ['row', 'column'] if case['format'] == 'rowcol' else ['x', 'y']
+        ax = axes[row, 0]
+        ax.imshow(image)
+        box = truth['target_tight_box'] if case['set'] == 't6' else truth['box']
+        ax.add_patch(Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1], fill=False, ec=RED, lw=1.5))
+        ax.plot(*(o * size / 1000), 'x', color=BLUE, ms=11, mew=2.5, label='model output')
+        ax.set_title(f'{title}: input', fontsize=9)
+        panels = [(layer, head, 0), (layer, head, 1), (20, 11, 0), (20, 11, 1)]
+        for j, (l, h, k) in enumerate(panels, start=1):
+            a = maps['attn'][FULL_LAYERS.index(l), h, 3 + k].astype(float)
+            share = (a / a.sum()).reshape(H, W)
             ax = axes[row, j]
-            ax.imshow(np.asarray(image.convert('L')), cmap='gray', vmin=0, vmax=255 * 1.6)
-            heat = np.kron(a / a.max(), np.ones((32, 32)))
-            rgba = plt.get_cmap('inferno_r')(heat)
-            rgba[..., 3] = np.clip(heat * 1.5, 0, 0.85)
-            ax.imshow(rgba)
-            o, t = pos[rec['id']]
-            size = np.asarray(image.size)
-            ax.plot(*(t * size / 1000), 'o', mfc='none', mec=AQUA, ms=12, mew=2, label='truth')
-            ax.plot(*(o * size / 1000), 'x', color=YELLOW, ms=12, mew=2, label='output')
-            ax.set_title(f'L{layer} H{head}, query: {labels[j]}', fontsize=9)
+            im = ax.imshow(np.clip(share, 1e-4, 1), cmap='viridis', norm=norm, extent=(0, size[0], size[1], 0),
+                           interpolation='nearest')
+            for tok in rec['target_tokens']:
+                r_, c_ = divmod(tok, W)
+                ax.add_patch(Rectangle((c_ * 32, r_ * 32), 32, 32, fill=False, ec=RED, lw=1.2))
+            ax.plot(*(o * size / 1000), 'x', color='white', ms=10, mew=2.2)
+            tm = share.ravel()[rec['target_tokens']].sum()
+            role = 'candidate head' if (l, h) == (layer, head) else 'causal reader'
+            ax.set_title(f'L{l} H{h} ({role})\nquery: {names[k]} digit, target share {tm:.2f}', fontsize=9)
+        for ax in axes[row]:
             ax.set_xticks([]); ax.set_yticks([]); ax.grid(False)
-        axes[row, 0].set_ylabel(rec['id'], fontsize=8)
-    axes[0, 0].legend(fontsize=8, loc='lower left')
+            for side in ('top', 'right', 'bottom', 'left'):
+                ax.spines[side].set_visible(True)
+        axes[row, 0].set_ylabel(rec['id'], fontsize=7)
+    handles = [plt.Line2D([], [], color=RED, lw=1.5, label='target box / target tokens'),
+               plt.Line2D([], [], color=BLUE, marker='x', ls='none', mew=2.5, label='model output (white on heatmaps)')]
+    fig.legend(handles=handles, loc='lower center', ncol=2, fontsize=9, bbox_to_anchor=(0.45, 0.02))
+    cb = fig.colorbar(im, ax=axes[:, 1:].ravel().tolist(), fraction=0.02, pad=0.01)
+    cb.set_label('share of the query\'s image attention per visual token (log scale)')
     save(fig, out / 'c1_attention_overlay.png')
 
 

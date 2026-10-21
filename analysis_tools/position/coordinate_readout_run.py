@@ -50,7 +50,7 @@ def done_ids(path: Path) -> set[str]:
 
 def code_digest() -> dict:
     here = Path(__file__).parent
-    names = ('coordinate_readout.py', 'coordinate_readout_run.py')
+    names = ('coordinate_readout.py', 'coordinate_readout_run.py', 'coordinate_readout_supp.py')
     return {n: hashlib.sha256((here / n).read_bytes()).hexdigest() for n in names}
 
 
@@ -254,56 +254,64 @@ def stage_c1(rt, out: Path, args) -> None:
             continue
         if case['set'] == 't6' and case['format'] == 'bbox':
             continue
-        t0 = time.time()
         image, truth, text = case_input(case)
-        prep = cr.prepare(rt, image, text)
-        coord = cr.coordinate_tokens(rt, rec['ids'], case['format'])
-        if not coord:
-            append_jsonl(path, [{'id': rec['id'], 'status': 'no_coordinate_tokens'}])
-            continue
-        x, pos = cr.teacher_forced(rt, prep, rec['ids'][:-1])
-        L = len(prep.ids)
-        sp = special_positions(rt, prep)
-        # Query position predicting generated token i is L + i - 1.
-        digit_q = [[L + i - 1 for i in toks] for toks in coord]
-        queries = [sp['q_end'], sp['think_end'], sp['last']] + [q for qs in digit_q for q in qs]
-        names = ['q_end', 'think_end', 'last'] + [f'v{k}d{j}' for k, qs in enumerate(digit_q) for j in range(len(qs))]
-        s, e = prep.span['start'], prep.span['end']
-        ro = cr.attention_readout(rt, x, pos, queries, (s, e))
-        a = np.stack([ro.attn[l][:, :, s:e].numpy() for l in cr.FULL_LAYERS])          # (8, heads, Q, Nv)
-        c = np.stack([ro.contrib[l].numpy() for l in cr.FULL_LAYERS])
-        # Attention mass on prompt segments for the relay analysis.
-        seg = {'image': (s, e), 'pre': (0, s), 'question': (e, sp['q_end'] + 1), 'template': (sp['q_end'] + 1, L),
-               'answer': (L, x.shape[1])}
-        seg_mass = {k: np.stack([ro.attn[l][:, :, u:v].sum(-1).numpy() for l in cr.FULL_LAYERS]).tolist()
-                    for k, (u, v) in seg.items()}
-        target = target_tokens(case, truth, prep.grid)
-        m = head_metrics(a, c, target, cr.token_centers(prep.grid))
-        key = [0, 1, 2] + [names.index(f'v{k}d0') for k in range(len(coord))]
-        # Gradient x activation for the first digit of each coordinate value.
-        targets = [(digit_q[k][0], rec['ids'][coord[k][0]]) for k in range(len(coord))]
-        try:
-            A = cr.grad_attribution(rt, x, pos, targets, digit_ids)['A'].numpy()      # (n, 32, Lx)
-        except torch.OutOfMemoryError:
-            # Long prompts (20x20 grids) may not fit a full backward pass on a shared GPU; the
-            # attention readout is kept and the attribution is recorded as missing, never imputed.
-            torch.cuda.empty_cache()
-            A = np.full((len(targets), len(rt.layers), x.shape[1]), np.nan, np.float32)
-        tm = np.zeros(e - s, bool)
-        tm[target] = True
-        absA = np.abs(A)
-        rho = absA[:, :, s:e][:, :, tm].sum(-1) / np.maximum(absA[:, :, s:e].sum(-1), 1e-30)
-        seg_grad = {k: absA[:, :, u:v].sum(-1).tolist() for k, (u, v) in seg.items()}
-        np.savez_compressed(root / 'maps' / f"{rec['id']}.npz", attn=a[:, :, key].astype(np.float16),
-                            contrib=c[:, :, key].astype(np.float16), grad_vis=A[:, :, s:e].astype(np.float16))
-        append_jsonl(path, [{
-            'id': rec['id'], 'status': 'ok', 'set': case['set'], 'format': case['format'], 'grid': list(prep.grid),
-            'correct': bool(rec['score'].get('correct')), 'score': rec['score'], 'query_names': names,
-            'query_positions': queries, 'key_queries': key, 'special': sp, 'span': [s, e], 'target_tokens': target,
-            'check': ro.check, 'seg_mass': seg_mass, 'rho': rho.tolist(),
-            'grad_share_image': (absA[:, :, s:e].sum(-1) / absA.sum(-1)).tolist(), 'grad_segments': seg_grad,
-            **{k: v.tolist() for k, v in m.items()}, 'seconds': round(time.time() - t0, 2)}])
-        print(f"c1 {rec['id']} {time.time() - t0:.1f}s", flush=True)
+        append_jsonl(path, [attention_record(rt, root, rec, case, image, truth, text, digit_ids)])
+        print(f"c1 {rec['id']}", flush=True)
+
+
+def attention_record(rt, root: Path, rec: dict, case: dict, image, truth: dict, text: str, digit_ids: list[int]) -> dict:
+    """C1 record of one generated answer: attention readout, head metrics and gradient attribution.
+
+    rec: baseline record with the generated ids and score; case: needs 'set' and 'format'; the target
+    tokens are those overlapping the truth box (T6 tight box or truth['box']). Maps go to root/maps.
+    """
+    t0 = time.time()
+    prep = cr.prepare(rt, image, text)
+    coord = cr.coordinate_tokens(rt, rec['ids'], case['format'])
+    if not coord:
+        return {'id': rec['id'], 'status': 'no_coordinate_tokens'}
+    x, pos = cr.teacher_forced(rt, prep, rec['ids'][:-1])
+    L = len(prep.ids)
+    sp = special_positions(rt, prep)
+    # Query position predicting generated token i is L + i - 1.
+    digit_q = [[L + i - 1 for i in toks] for toks in coord]
+    queries = [sp['q_end'], sp['think_end'], sp['last']] + [q for qs in digit_q for q in qs]
+    names = ['q_end', 'think_end', 'last'] + [f'v{k}d{j}' for k, qs in enumerate(digit_q) for j in range(len(qs))]
+    s, e = prep.span['start'], prep.span['end']
+    ro = cr.attention_readout(rt, x, pos, queries, (s, e))
+    a = np.stack([ro.attn[l][:, :, s:e].numpy() for l in cr.FULL_LAYERS])          # (8, heads, Q, Nv)
+    c = np.stack([ro.contrib[l].numpy() for l in cr.FULL_LAYERS])
+    # Attention mass on prompt segments for the relay analysis.
+    seg = {'image': (s, e), 'pre': (0, s), 'question': (e, sp['q_end'] + 1), 'template': (sp['q_end'] + 1, L),
+           'answer': (L, x.shape[1])}
+    seg_mass = {k: np.stack([ro.attn[l][:, :, u:v].sum(-1).numpy() for l in cr.FULL_LAYERS]).tolist()
+                for k, (u, v) in seg.items()}
+    target = target_tokens(case, truth, prep.grid)
+    m = head_metrics(a, c, target, cr.token_centers(prep.grid))
+    key = [0, 1, 2] + [names.index(f'v{k}d0') for k in range(len(coord))]
+    # Gradient x activation for the first digit of each coordinate value.
+    targets = [(digit_q[k][0], rec['ids'][coord[k][0]]) for k in range(len(coord))]
+    try:
+        A = cr.grad_attribution(rt, x, pos, targets, digit_ids)['A'].numpy()      # (n, 32, Lx)
+    except torch.OutOfMemoryError:
+        # Long prompts (20x20 grids) may not fit a full backward pass on a shared GPU; the
+        # attention readout is kept and the attribution is recorded as missing, never imputed.
+        torch.cuda.empty_cache()
+        A = np.full((len(targets), len(rt.layers), x.shape[1]), np.nan, np.float32)
+    tm = np.zeros(e - s, bool)
+    tm[target] = True
+    absA = np.abs(A)
+    rho = absA[:, :, s:e][:, :, tm].sum(-1) / np.maximum(absA[:, :, s:e].sum(-1), 1e-30)
+    seg_grad = {k: absA[:, :, u:v].sum(-1).tolist() for k, (u, v) in seg.items()}
+    np.savez_compressed(root / 'maps' / f"{rec['id']}.npz", attn=a[:, :, key].astype(np.float16),
+                        contrib=c[:, :, key].astype(np.float16), grad_vis=A[:, :, s:e].astype(np.float16))
+    return {
+        'id': rec['id'], 'status': 'ok', 'set': case['set'], 'format': case['format'], 'grid': list(prep.grid),
+        'correct': bool(rec['score'].get('correct')), 'score': rec['score'], 'query_names': names,
+        'query_positions': queries, 'key_queries': key, 'special': sp, 'span': [s, e], 'target_tokens': target,
+        'check': ro.check, 'seg_mass': seg_mass, 'rho': rho.tolist(),
+        'grad_share_image': (absA[:, :, s:e].sum(-1) / absA.sum(-1)).tolist(), 'grad_segments': seg_grad,
+        **{k: v.tolist() for k, v in m.items()}, 'seconds': round(time.time() - t0, 2)}
 
 
 # ----------------------------------------------------------------------------- C2 / C3
@@ -749,7 +757,13 @@ def main() -> None:
     p.add_argument('--n-random', type=int, default=20)
     p.add_argument('--fail-order', default='20:rowcol,10:point,20:point,10:rowcol,6:rowcol,6:point')
     p.add_argument('--c2-max-new-tokens', type=int, default=48)
+    p.add_argument('--refcoco-source', default='', help='Experiment-3.4 probe-refinement run directory (test split).')
+    p.add_argument('--refcoco', default='', help='RefCOCO parquet directory (referring expressions and boxes).')
+    p.add_argument('--max-rows', type=int, default=32, help='Rows per batched forward in the supplementary stages.')
     args = p.parse_args()
+    # Supplementary stages (C4 patching, redundancy, RefCOCO, C5) live in a separate module.
+    from analysis_tools.position import coordinate_readout_supp as supp
+    STAGES.update(supp.STAGES)
     args.output.mkdir(parents=True, exist_ok=True)
     rt = qr.load(args.model, device='cuda:0')
     meta_path = args.output / 'experiment.json'

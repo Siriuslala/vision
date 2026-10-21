@@ -48,3 +48,17 @@ Qwen3.8-27B 按指定模型卡的推荐值独立选择预设。Thinking 模式�
 跨模型比较可采用统一解码配置来控制变量，也可采用各模型的推荐配置来考察各自建议使用方式；后者必须逐模型报告参数。不能在 benchmark 上反复调参后只汇报最高分。多次生成后择优、投票或计算 pass@k 使用了不同的推理预算，应单独命名和报告。
 
 [BabyVision 官方评测说明](https://github.com/UniPat-AI/BabyVision/blob/main/babyvision_eval/README.md) 默认 `NUM_PASSES=3`，采用 LLM judge，并汇总多轮均值和标准差。本项目目前使用本地严格答案匹配，尚未自动运行多 seed 或聚合跨轮指标。不同 seed 需分别配置 `RANDOM_SEED` 和独立 `OUTPUT_FILE`，通过 `bash scripts/eva/evaluation.sh` 启动各轮；本地严格评分不能直接等同于官方 LLM-judge 分数。
+
+## 格式宽松的诊断评分
+
+BabyVision 填空题的参考答案格式不统一，例如 Find the different 中同时存在“(7,2)”“10,5”与“6-7”三种位置写法，严格评分会把内容正确、写法不同的答案判错。为估计这类格式误判的规模，eva/diagnostic_scoring.py 提供独立的诊断评分函数 diagnostic_score。该函数不修改 eva.benchmark.score 的行为，严格评分仍是报告的主指标，诊断评分只能作为补充结果单独命名和报告。
+
+诊断评分的正确集合等于严格评分的正确集合加上以下规则接受的答案。每条规则都要求参考答案与模型答案解析为同一类型且结构化取值完全相等，只放宽写法，不接受内容不同的答案：
+
+1. 答案抽取：接受不在行首的“Final answer:”标记、标记后换行的答案，以及独占最后一行的 `\boxed{}` 答案；截断的回答不抽取。
+2. 字符规范化：统一 Unicode 连字符与减号，去除 Markdown 强调符、引号与外层 `\boxed{}`。
+3. 位置：带“row”“column”标记的写法与数字对之间互相转换，数字对只在题目先提到行、后提到列时按（行，列）解析，不交换顺序。
+4. 整数序列与短元素序列：忽略逗号、分号、空白与外层括号等分隔写法，顺序与元素必须相同。
+5. 配对映射：“X-Y”项按集合比较，列举顺序不计，每项方向保持不变。
+
+已有运行文件可用 scripts/analysis/deepstack/babyvision_diagnostic.sh 重新评分，结果写在原运行文件旁，文件名加 .diagnostic.json 后缀，原 jsonl 与 summary 不变。规则细节、格式类别统计与实验 4.2 的结果见 [DeepStack 端到端对照第 3.3 节](analysis/deepstack/results_2026-10-14_end_to_end.md)。

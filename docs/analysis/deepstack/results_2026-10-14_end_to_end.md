@@ -156,7 +156,110 @@ Qwen3-VL Instruct 在 BabyVision 上频繁陷入重复或无休止的逐项枚�
 
 按该比例外推，若全部 176 条截断回答获得同样的重新回答机会，Qwen3-VL-8B 的总体准确率约为 0.14（按区间外推为 0.11–0.21），仍不高于 Qwen3.5-9B 的 0.17。该外推只用于说明量级，不作为正式结果。
 
-### 3.3 小结
+### 3.3 格式宽松的诊断评分
+
+严格评分要求模型答案与参考答案在规范化后逐字相等。BabyVision 的填空题参考答案格式不统一，同一子类型内既有“(7,2)”，也有“10,5”与“6-7”，因此内容正确、写法不同的答案会被判错（例如 Qwen3.5-9B 在 taskId 879 上的“(10,5)”）。本节在严格评分之外增加一个诊断评分，用于估计严格错误中有多少属于纯格式不一致。严格评分仍是本实验的主指标，前文各节的数值均不变；诊断评分只作为补充报告。
+
+#### 3.3.1 参考答案的格式类别
+
+对全部 388 题按参考答案的结构归类，结果如下。填空题共 253 题，其中能被下文某一结构化类型解析的有 229 题，其余 24 题只经过字符规范化后比较。
+
+| 类别 | 题数 | 参考答案示例 | 涉及的子类型 |
+| --- | --- | --- | --- |
+| 选项字母（选择题） | 135 | B | 各选择题 |
+| 单个整数 | 91 | 39 | Count 3D blocks、Maze、Metro map 等 |
+| 整数序列 | 54 | 15,13,12,10、3 and 11 | Lines Observation、Count Same Patterns、Reconstruction 等 |
+| 配对映射 | 50 | 1-C, 2-D, 3-A, 4-B.、A - Blue, B - Yellow | Connect the lines、3D Views、Find the shadow、Mirroring Patterns 等 |
+| 位置，数字写法 | 15 | (4,7)、10,5、6-7 | Find the different |
+| 位置，文字写法 | 12 | Row 1, Column 2、The third row and first column | Find the shadow、Find the same 等 |
+| 短元素序列 | 7 | 2,N,Z,S | Recognize numbers and letters 等 |
+| 其他 | 24 | 8−5=3、(1,3)-(3,1)、Second row second | 多个子类型 |
+
+“其他”类中有三个算式参考答案使用 Unicode 减号（U+2212），而模型输出 ASCII 连字符，这类不一致由字符规范化处理；其余如“Second row second”“The first one in the first row, the third one in the first row”缺少可确定的行列标记，不做解析。
+
+在四个模型的回答中观察到的格式不一致分为两组：
+
+1. **答案抽取。** 模型写出了“Final answer: X”，但不在行首（“So Final answer: B”“So "Final answer: 9"”），或写成“The final answer is `\boxed{B}`”。严格评分只接受行首的标记，这些回答被计为无法解析。
+2. **答案写法。** 位置答案的括号与分隔符不同（“(10,5)”对“10,5”），位置以数字与文字两种方式表达（“1,2”对“Row 1, Column 2”），配对映射以空格代替逗号分隔，以及上述减号字符的差异。
+
+#### 3.3.2 规则
+
+记第 $i$ 题的参考答案字符串为 $r_i$，模型最终答案字符串为 $\hat{y}_i$，严格评分的正误为 $c^{\mathrm{s}}_i \in \{0, 1\}$。对每一种答案类型 $k$，定义解析函数 $\pi_k$，它把一个字符串映射为该类型的结构化取值；字符串不符合该类型时，取值记为 $\bot$。诊断评分的正误为
+
+$$
+c^{\mathrm{d}}_i = \max\left(c^{\mathrm{s}}_i,\; \max_{k} \mathbb{1}\left[\pi_k(r_i) \neq \bot \;\wedge\; \pi_k(r_i) = \pi_k(\hat{y}_i)\right]\right).
+$$
+
+其中 $\mathbb{1}[\cdot]$ 为示性函数，条件成立时取 1，否则取 0。该式包含两层含义。第一，诊断评分的正确集合总包含严格评分的正确集合，一题不会因为改用诊断评分而由对变错。第二，某一规则 $k$ 接受一题的条件是参考答案与模型答案都能解析为同一类型，且结构化取值完全相等；规则只放宽写法，不放宽内容，任何数字、字母、配对或有序位置不同的答案都不被接受。各类型的 $\pi_k$ 如下：
+
+1. **字符规范化。** 在严格评分的规范化（NFKC、去除空白、忽略大小写与末尾句点）之前，把各种 Unicode 连字符、破折号与减号统一为 ASCII 连字符，并去掉 Markdown 强调符、引号、美元符号与完整包裹答案的 `\boxed{}`。
+2. **位置。** 取值为有序二元组（行，列）。带标记的写法（“Row 3, Column 1”“Third row first column”“column 3, row 2”）由“row”与“column”标记确定各数字的含义，每个标记必须恰好出现一次，且去掉标记与“the”“and”等虚词后不能剩余其他内容。不带标记的数字对（“(10,5)”“10,5”“10-5”“10 5”）只有在题目先提到行、后提到列时才解析为（行，列），因为只有题目约定了顺序，数字对的含义才确定。规则不交换两个数字的位置，不在 (row, col) 与 (x, y) 之间做任何转换。
+3. **整数序列。** 取值为有序整数元组，分隔符可为逗号、分号、空白或“and”，可带一对外层括号。序列的顺序、长度与每个数字都必须相同；连字符不作为分隔符，因为在本数据集中“a-b”表示配对或位置。
+4. **配对映射。** 取值为“X-Y”项构成的多重集合，各项以逗号或分号分隔，或者在每一项都是不含空白的“X-Y”时以空白分隔。映射的列举顺序不携带信息，因此按集合比较；每一项内部的方向保持不变，只有一侧为纯数字、另一侧为纯字母时，按“数字-字母”统一方向，因为两侧的类型已经确定了各自的含义。
+5. **短元素序列。** 取值为有序元组，每个元素为单个字母、单个数字或整数，分隔符可为逗号、分号或空白。
+6. **选择题。** 最终答案必须是单个选项字母，允许“(B)”“B.”“option B”等写法，字母超出选项数时不接受。
+
+答案抽取的规则为：取回答中最后一处“Final answer:”或“final answer is”标记之后的内容，标记不必位于行首；标记所在行没有内容时取下一个非空行；没有标记时，只接受独占最后一行的 `\boxed{}` 答案，或整段回答只有一行的情况（与严格评分相同）。因达到生成上限而截断的回答（finish_reason 为 length）一律不抽取，保持错误。
+
+规则的单元测试覆盖每一类规则，并对每一类给出对抗性的近似答案，例如交换行列的“(5,10)”、相差 1 的“(10,6)”、缺少一项或多出一项的配对映射、方向颠倒的同类型配对“8-2”、数字顺序不同的整数序列、“15”对“5”、“9 cubes”对“9”，以及没有行列约定时的裸数字对，这些答案都必须被拒绝。
+
+#### 3.3.3 结果
+
+诊断评分在 CPU 上重新评估四个模型的已有回答，不重新生成。重新评分前，逐条核对存档的严格评分与 eva.benchmark.score 的重新计算结果一致。四个模型的总体结果与各子类型如下，单元格为严格／诊断的答对题数，有变化的单元格加粗。
+
+| 范围 | $n$ | VL-8B | 3.5-9B | VL-4B | 3.5-4B |
+| --- | --- | --- | --- | --- | --- |
+| 全集 | 388 | **33／35** | **67／70** | **31／32** | **51／56** |
+| 2D Pattern Completion | 20 | 4／4 | 6／6 | 6／6 | 5／5 |
+| 3D Cube Unfold | 12 | 0／0 | 2／2 | 1／1 | 3／3 |
+| 3D Pattern Completion | 18 | 3／3 | **7／8** | 1／1 | 7／7 |
+| 3D Views | 27 | 1／1 | **5／6** | 3／3 | 5／5 |
+| Connect the lines | 19 | 0／0 | 1／1 | 0／0 | 0／0 |
+| Count 3D blocks | 22 | 1／1 | 3／3 | 0／0 | **4／5** |
+| Count Clusters | 18 | **4／5** | 6／6 | **1／2** | **2／3** |
+| Count Same Patterns | 35 | 3／3 | 5／5 | 1／1 | 1／1 |
+| Find the different | 16 | 2／2 | **1／2** | 0／0 | 1／1 |
+| Find the same | 17 | **0／1** | 3／3 | 0／0 | 0／0 |
+| Find the shadow | 23 | 0／0 | 1／1 | 2／2 | **0／2** |
+| Lines Observation | 9 | 0／0 | 0／0 | 0／0 | 0／0 |
+| Logic Patterns | 14 | 0／0 | 2／2 | 1／1 | 4／4 |
+| Maze | 20 | 4／4 | 2／2 | 3／3 | 3／3 |
+| Metro map | 12 | 1／1 | 1／1 | 1／1 | 3／3 |
+| Mirroring Patterns | 10 | 1／1 | 2／2 | 1／1 | 1／1 |
+| Overlay Patterns | 17 | 1／1 | 1／1 | 0／0 | 1／1 |
+| Paper Folding | 12 | 2／2 | 1／1 | 1／1 | 1／1 |
+| Pattern and Color Completion | 20 | 3／3 | 7／7 | 1／1 | 3／3 |
+| Recognize numbers and letters | 23 | 3／3 | 5／5 | 6／6 | 3／3 |
+| Reconstruction | 14 | 0／0 | 2／2 | 2／2 | 2／2 |
+| Rotation Patterns | 10 | 0／0 | 4／4 | 0／0 | **2／3** |
+
+总体准确率及其 Wilson 95% 区间为：Qwen3-VL-8B 0.085 [0.061, 0.117] 变为 0.090 [0.066, 0.123]，Qwen3.5-9B 0.173 [0.138, 0.213] 变为 0.180 [0.145, 0.222]，Qwen3-VL-4B 0.080 [0.057, 0.111] 变为 0.082 [0.059, 0.114]，Qwen3.5-4B 0.131 [0.101, 0.169] 变为 0.144 [0.113, 0.183]。
+
+四个模型共有 11 条由错变对，没有由对变错。每一条均逐一阅读了题目、参考答案与回答末尾的最终答案，确认答案内容与参考答案一致：
+
+| 模型 | taskId | 子类型 | 参考答案 | 模型最终答案 | 规则 | 核对说明 |
+| --- | --- | --- | --- | --- | --- | --- |
+| VL-8B | 626 | Find the same | Second row third column | 2,3 | 位置 | 题目问“in which row and column”，回答前文写明“Row 2, Column 3” |
+| VL-8B | 5490 | Count Clusters | 8−5=3（U+2212） | 8-5=3 | 字符规范化 | 题目给出的示例格式为“3-1=2” |
+| 3.5-9B | 879 | Find the different | 10,5 | (10,5) | 位置 | 题目规定格式为 (a,b)，a 为行、b 为列 |
+| 3.5-9B | 6280 | 3D Views | 1-C, 2-D, 3-A, 4-B. | 1-C 2-D 3-A 4-B | 配对映射 | 仅分隔符不同 |
+| 3.5-9B | 4375 | 3D Pattern Completion | B | So Final answer: B | 答案抽取 | 回答前文写明“I have to guess” |
+| VL-4B | 5490 | Count Clusters | 8−5=3 | 8-5=3 | 字符规范化 | 同 VL-8B |
+| 3.5-4B | 4460 | Count 3D blocks | 9 | So "Final answer: 9" | 答案抽取 | 前文推理结论为 9 |
+| 3.5-4B | 5006 | Find the shadow | Row 1, Column 2 | 1,2 | 位置 | 题目要求“Answer which row and which column”，前文写明“top row, middle (position 1,2)” |
+| 3.5-4B | 5018 | Find the shadow | The third row and first column | Row 3, Column 1 | 位置 | 文字写法不同 |
+| 3.5-4B | 5490 | Count Clusters | 8−5=3 | 8-5=3 | 字符规范化 | 同 VL-8B |
+| 3.5-4B | 5519 | Rotation Patterns | C | So Final answer: C | 答案抽取 | 回答前文写明“option 3 might be the intended answer”，选项 3 即 C |
+
+主要观察如下：
+
+1. **格式不一致对总体结论的影响很小。** 每个模型的变化为 1–5 题（0.3%–1.3%），均在严格评分的 Wilson 区间内。按诊断评分重算第 3.1 节的 McNemar 检验，8B 组由 18／52 变为 20／55（$p<0.001$），4B 组由 24／44（$p=0.021$）变为 24／48（$p=0.006$），方向与显著性结论不变。
+2. **Qwen3.5 受影响更多。** Qwen3.5 两个模型共 8 条变化，Qwen3-VL 共 3 条。Qwen3.5 的长回答更常在最后一句写“So Final answer: X”，3 条答案抽取类变化全部来自 Qwen3.5；其中 4375 与 5519 两条在回答中明示为猜测，严格评分与诊断评分都只评估最终答案，不区分猜测与推理所得。
+3. **Find the different 只有 taskId 879 一条变化。** Qwen3.5-9B 的 Find the different 由 1／16 变为 2／16，三个新运行模型的该子类型不变，与第 6.2 节编码者的发现一致。
+
+诊断评分的限制如下：参考答案中的 24 题“其他”类不做结构化解析，其中“Second row second”“(1,3)-(3,1)”等写法的格式等价答案仍会被判错；同类型两侧的配对（如“1-4”与“4-1”）在部分子类型中可能表示同一对应关系，规则为保守起见不交换方向；整数序列在部分子类型中可能是无序集合（如 Reconstruction 选出的碎片编号），规则按有序比较。因此诊断评分是格式正确率的下界估计，而非 LLM judge 意义上的语义评分。
+
+### 3.4 小结
 
 BabyVision 总体上没有提供 DeepStack 族占优的证据：完整预算下两组均为 Qwen3.5 更高，匹配预算下两组之间无显著差异。Visual Tracking 是唯一在两组中准确率都接近相等的类别，四个模型的准确率都只有 0.10 左右，该类别上的相等反映的是共同的低水平，不能说明 DeepStack 带来了追踪能力。
 
@@ -323,7 +426,7 @@ Find the different 的规则编码如下（每个模型 16 题）：
 4. **搜索方式在 Find the different 上有差别，在其余子类型上相近。** Find the different 中 Qwen3.5 更多直接声称发现目标（direct_claim 为 11／16 与 10／16），Qwen3-VL 为 7／16 与 8／16；每格只有 16 条，该差异不具统计意义。其余子类型中四个模型都以逐项枚举（row_scan）为主。
 5. **属性描述在四个模型中均以 mixed 与 hallucinated 为主**，完全准确的描述在 Find the different 中只有 0–4 条。
 
-推理文本没有显示 DeepStack 族在细节描述上更准确：两类模型在 Fine-grained Discrimination 上的失败都主要发生在感知阶段，与实验 1.3 对 Qwen3.5-9B 的结论一致。另有一条编码者指出的评分问题：Qwen3.5-9B 在 taskId 879 上回答“(10,5)”，参考答案写作“10,5”，严格评分判为错误，人工编码为 other。BabyVision 的 Find the different 参考答案格式不统一（同一子类型中有“(7,2)”“10,5”“6-7”等写法），本实验保持严格评分口径不变；若按格式宽松的比较，Qwen3.5-9B 的 Find the different 为 2／16，三个新运行模型不受影响。
+推理文本没有显示 DeepStack 族在细节描述上更准确：两类模型在 Fine-grained Discrimination 上的失败都主要发生在感知阶段，与实验 1.3 对 Qwen3.5-9B 的结论一致。另有一条编码者指出的评分问题：Qwen3.5-9B 在 taskId 879 上回答“(10,5)”，参考答案写作“10,5”，严格评分判为错误，人工编码为 other。BabyVision 的 Find the different 参考答案格式不统一（同一子类型中有“(7,2)”“10,5”“6-7”等写法），本实验保持严格评分口径不变；按第 3.3 节的诊断评分，Qwen3.5-9B 的 Find the different 为 2／16，三个新运行模型的该子类型不变。
 
 ## 7. 解释与限制
 
@@ -358,7 +461,7 @@ BabyVision 不宜作为 4.3 的主要指标：Qwen3-VL 的分数受循环与截�
 
 ## 8. 运行与产物
 
-运行入口为 scripts/analysis/deepstack/deepstack_comparison.sh，参数集中在脚本顶部，COMMAND 选择步骤：babyvision、bv_merge、bv_extension（BabyVision）；decomp_prepare、decomp_run、t3c5_run、decomp_score、decomp_analyze（子任务）；refcoco_build、refcoco_run、refcoco_score（RefCOCO）；spotcheck、batch_validate（批处理核对）；analyze（统计与作图）；reasoning（推理文本编码）。代码位于 analysis_tools/deepstack/ 下的 deepstack_comparison.py（运行）、deepstack_comparison_analysis.py（统计与作图）与 deepstack_reasoning.py（推理文本编码），测试位于 tests/analysis/deepstack/。
+运行入口为 scripts/analysis/deepstack/deepstack_comparison.sh，参数集中在脚本顶部，COMMAND 选择步骤：babyvision、bv_merge、bv_extension（BabyVision）；decomp_prepare、decomp_run、t3c5_run、decomp_score、decomp_analyze（子任务）；refcoco_build、refcoco_run、refcoco_score（RefCOCO）；spotcheck、batch_validate（批处理核对）；analyze（统计与作图）；reasoning（推理文本编码）。代码位于 analysis_tools/deepstack/ 下的 deepstack_comparison.py（运行）、deepstack_comparison_analysis.py（统计与作图）与 deepstack_reasoning.py（推理文本编码），测试位于 tests/analysis/deepstack/。诊断评分（第 3.3 节）的入口为 scripts/analysis/deepstack/babyvision_diagnostic.sh，只使用 CPU；评分规则位于 eva/diagnostic_scoring.py，重新评分代码位于 analysis_tools/deepstack/babyvision_diagnostic.py。
 
 产物位于 WORK_DIR/analysis/deepstack/2026-10-14_end_to_end/：
 
@@ -367,4 +470,5 @@ BabyVision 不宜作为 4.3 的主要指标：Qwen3-VL 的分数受循环与截�
 - refcoco/：抽样的题目与图像、四个模型的回答与评分；
 - checks/、各模型目录下的 spotcheck_*.jsonl：批处理核对；
 - reasoning/：规则编码（rule_codes.jsonl）、盲化样本与密钥、人工编码与汇总；
-- analysis/：全部表格（tables.md）、汇总数值（summary.json）与图。
+- analysis/：全部表格（tables.md）、汇总数值（summary.json）与图；
+- diagnostic_scoring/：诊断评分的汇总（summary.json）、由错变对的条目（flips.jsonl）与表格（tables.md）；各模型的逐题诊断评分写在对应运行文件旁，文件名为原文件名加 .diagnostic.json 后缀（Qwen3.5-9B 的已有运行位于 WORK_DIR/eval/）。

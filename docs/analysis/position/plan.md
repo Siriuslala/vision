@@ -25,7 +25,7 @@
 2. **文本前缀对照（2026-09-30，已完成）。** 合成图 probe 只在一种 prompt 下训练，需要检验读出是否只依赖图像内部位置。在图像之前插入 169 个文本 token 而保持像素与标签不变后，visual embedding 的预测不变，decoder 第 1 层起出现非零预测位移，第 7 层平均位移约为 0–1 坐标下的 0.115。该结果说明 decoder 中的位置读出方向受前置上下文影响，且影响从 linear attention 层开始出现。见同一报告实验 B。
 3. **真实图逐层 probe（2026-10-01，已完成）。** 合成图只有 24 张训练图，且 decoder 第 16 与第 32 层之间未采样。实验在 360 张 RefCOCO 图像上覆盖 ViT 全部 27 层与 decoder 全部 32 层。加入 ViT position embedding 后的 MAE 为 25.96（0–1000 坐标），patch content 为 248.72；decoder 误差在第 14 层最低（92.33），随后升至第 32 层的 185.29；最佳层的精确网格准确率仅为 5.59%。见[真实图实验](results_2026-10-01.md)。
 4. **位置 probe 完善（已完成，见[结果](results_2026-10-14_probe_refinement.md)）。** 真实图 probe 使用 256 维随机投影和 ridge 回归（514 个参数），训练图像只有 240 张，无法区分“位置信息在深层减少”与“低容量读出无法提取”。此外，MRoPE 只在 attention 内部临时注入相对位置，decoder 的 residual stream 可能以相对形式保留位置。实验 3.4 提高 probe 容量、扩大数据，并加入相对位置 probe。设计见[位置 probe 完善](design_probe_refinement.md)。
-5. **坐标读取路径（部分完成，见[结果](results_2026-10-14_coordinate_readout.md)）。** 实验 1.2 中红色目标的行列答案 3/3 正确而中心点 0/3 正确，RefCOCO 的 bbox 8/8 达到 IoU≥0.5，说明坐标输出能力依赖场景与答案格式。probe 不能回答模型在生成坐标时使用哪一种位置来源，实验 3.5 在完整模型生成坐标时测量 attention 并干预各位置来源。设计见[坐标读取路径](design_coordinate_readout.md)。
+5. **坐标读取路径（已完成，见[结果](results_2026-10-14_coordinate_readout.md)）。** 实验 1.2 中红色目标的行列答案 3/3 正确而中心点 0/3 正确，RefCOCO 的 bbox 8/8 达到 IoU≥0.5，说明坐标输出能力依赖场景与答案格式。probe 不能回答模型在生成坐标时使用哪一种位置来源，实验 3.5 在完整模型生成坐标时测量 attention 并干预各位置来源。设计见[坐标读取路径](design_coordinate_readout.md)。
 
 ## 3. 子实验与进度
 
@@ -35,7 +35,16 @@
 | 3.2 | 文本前缀对照 | 保持像素与标签不变，在图像前插入文本，用固定 probe 测量预测位移 | 已完成；[结果](results_2026-09-30.md) |
 | 3.3 | 真实图逐层 probe | 在 RefCOCO 图像上覆盖 ViT 与 decoder 全部层，测量位置可读性随深度的变化 | 已完成；[结果](results_2026-10-01.md) |
 | 3.4 | 位置 probe 完善 | 以全维 ridge、MLP probe、约 3000 张图像和学习曲线确定可读性上限，并区分绝对位置与相对位置的可读性 | 已完成；[设计](design_probe_refinement.md)，[结果](results_2026-10-14_probe_refinement.md) |
-| 3.5 | 坐标读取路径 | 测量生成坐标 token 时的 attention，并通过 position IDs、ViT 位置编码、序列顺序与视觉内容的干预确定坐标的实际来源 | 部分完成（C0–C4 与网格失败定向分析；RefCOCO、C4 输出 patching、C5 待开展）；[设计](design_coordinate_readout.md)，[结果](results_2026-10-14_coordinate_readout.md) |
+| 3.5 | 坐标读取路径 | 测量生成坐标 token 时的 attention，并通过 position IDs、ViT 位置编码、序列顺序与视觉内容的干预确定坐标的实际来源 | 已完成（含 C4 输出 patching 与冗余结构、RefCOCO 自然图像、C5 插行与 6×6 定向条件）；[设计](design_coordinate_readout.md)，[结果](results_2026-10-14_coordinate_readout.md) |
+| 3.6 | 坐标数值的表征与转换 | 在密集单目标平移序列上记录预测各坐标数字的 residual，以 probe、几何分析、logit lens、直接归因、数字强制与插值区分位置表示与数字读出 | 第一轮与第二轮完成；[设计](design_coordinate_value.md)，[结果](results_2026-10-15_coordinate_value.md)，[第二轮结果](results_2026-10-16_coordinate_value_r2.md) |
+| 3.7 | ViT 位置与布局表征 | 以可学习 PE 与 2D RoPE 的消融、缩放与区域互换、ViT 逐层位置与双目标布局 probe、merger 位置子空间的线性擦除和局部重读编码方式，确定 ViT 中位置信息的来源与组织形式 | 第一轮与第二轮完成；[设计](design_vit_layout.md)，[结果](results_2026-10-15_vit_layout.md)，[第二轮结果](results_2026-10-16_vit_layout_r2.md) |
+| 3.8 | 序列顺序的位置作用 | 以槽位重排、图形行编辑、mixer 输出恢复与 probe 区分 token 计数、邻域借用与图形计数三种解释，定位产生顺序作用的层，并检验其与 20×20 列号多计 1 的关系 | 已完成；[设计](design_sequence_order.md)，[结果](results_2026-10-15_sequence_order.md) |
+| 3.8 第二轮 | Gated DeltaNet 的行序数机制 | 测量第 9–16 层的门控 α 与 β，进行事先登记预测的门控干预、行序数 probe、按距离的 mixer 恢复、ViT 位置与上下文移植，以及直接作答与先推理后作答的对照，并逐条核对第一轮结论的证据 | 已完成；[结果](results_2026-10-16_sequence_order_r2.md) |
+| 3.9 | 坐标读出工具 | 以原生 function calling 调用 locate 工具，工具读取调用时 128 个 full-attention head 在目标描述末 token 上的 attention，经小型 MLP 对 visual tokens 打分并返回加权中心；在 RefCOCO 与通用合成场景上训练，在圆盘、T6、布局与环形等分布外合成任务上配对比较，并检验工具坐标写入上下文后行列答案的变化 | 已完成；[设计](design_readout_tool.md)、[结果](results_2026-10-16_readout_tool.md) |
+| 3.10 | 行列序号的统一机制 | 测量空白列与空白行之后 DeltaNet 门控 α 与计数 probe 的复位，按 head 类别（遗忘 head、行首 head、integrator）施加门控干预，比较直接作答与先推理后作答在 prefill 干预下的准确率，并交换行列的输出顺序 | 已完成；[设计](design_rowcol_mechanism.md)、[结果](results_2026-10-20_rowcol_mechanism.md) |
+| 3.11 | 坐标读出的信息流 | 对 128 个 full-attention head 逐一、逐层与留一 patching，按目标、同行、同列与背景等子集替换图像 KV，交换 11 种输出格式的坐标顺序，在 33 个位置追踪残差中的坐标，并重建 6 个位置的位置场 | 已完成；[设计](design_coordinate_flow.md)、[结果](results_2026-10-20_coordinate_flow.md) |
+| 3.12 | 坐标数字读出的失败机理 | 强制首位数字 k = 1..9 的析因实验，记录前两个数位位置的数字分布、各层残差与逐组件 direct logit attribution；在空白画布、RefCOCO、网格、计数与文本数值换算上对照，并以空白画布校准检验中心先验 | 已完成；[设计](design_digit_failure.md)、[结果](results_2026-10-20_digit_failure.md) |
+| 3.9 第二轮 | 坐标读出工具的改进与适用范围 | 模型调用时先填写粗略坐标，工具在答案槽位读取 attention 与内容特征；比较含与不含 attention 的读出器及其计算成本，在五级真实感合成场景与 RefCOCO 上界定适用范围，并以干预检验坐标与序号读出的关系 | 已完成；[设计](design_readout_tool.md)、[结果](results_2026-10-20_readout_tool_r2.md) |
 
 旧计划中的两项待实施内容并入实验 3.5：
 

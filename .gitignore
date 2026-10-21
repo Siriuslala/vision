@@ -13,6 +13,7 @@ wheels/
 
 # Local model inference artifacts
 outputs/
+tmp/
 *.log
 
 # Others

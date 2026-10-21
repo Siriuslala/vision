@@ -1,223 +1,230 @@
 # 实验 2.2：位置相关成分与高范数 token
 
-本实验属于[视觉细节表征](plan.md)，承接实验 2.1 中关于固定高分位置与高范数 token 的结果。2.1 发现，相同像素内容位于不同位置时得到不同的表征，这一位置相关成分足以主导手工单图距离读出；同时，少数 token 的范数远高于其余 token，且其位置在 decoder 末层与图像内容无关。本实验研究这一反常现象的三个方面：位置相关成分与高范数 token 来自何处（来源），包含什么信息（信息），对模型回答起什么作用（功能）。
+本实验属于[视觉细节表征](plan.md)，承接实验 2.1 中关于固定高分位置与高范数 token 的结果。2.1 发现，相同像素内容位于不同位置时得到不同的表征，这一位置相关成分足以主导手工单图距离读出；同时，少数 token 的范数远高于其余 token，其位置与图像内容关系很弱。本实验研究高范数 token 的三个方面：它们来自何处（来源），包含什么信息（信息），对模型回答起什么作用（功能），并以 Qwen3-VL-8B 作为对照。结果见[高范数 token 的来源、信息与功能](results_2026-10-16_high_norm.md)。
 
 ## 1. 研究问题与动机
 
 ### 1.1 现有证据
 
-现有证据来自 2026-09-30 与 2026-10-01 的两组实验（见[固定高分位置](results_2026-09-30_pilot.md)、[距离指标与高范数 token](results_2026-09-30.md)、[图像布局与高范数排除](results_2026-10-01.md)），可以归纳为四项：
+现有证据来自 2026-09-30 与 2026-10-01 的两组实验（见[固定高分位置](results_2026-09-30_pilot.md)、[距离指标与高范数 token](results_2026-09-30.md)、[图像布局与高范数排除](results_2026-10-01.md)），以及实验 3.7 与 2.5a，可以归纳为六项：
 
-1. **跨位置差异产生于位置编码与 attention 之后。** 在未加位置编码的 patch embedding 上，正常图各实例的分数全部为零；从 ViT 第 3 层起，正常图已经存在固定最高分位置（6×6 小人图的第 2 行第 6 列），异常图与正常图的实例分数相关系数为 0.986–0.996。该结果只能说明差异产生于加入 learned absolute position embedding 与若干层 attention 之后，无法区分 learned absolute position embedding、ViT attention 中的 2D RoPE 与有限画布边界造成的上下文差异三者各自的贡献。
-2. **merger 上的左上偏好并非纯位置效应。** 标准网格与错列布局的 15 张正常图在 merger 输出上均以左上实例为最高分；环形布局中最高分实例随图案变化。若该成分只由二维位置决定，则环形布局中也应出现与图案无关的固定峰。
-3. **decoder 末层的范数峰与内容无关。** decoder 第 32 层的全图范数峰在 18 张正常图中均位于第一行第 1 或第 2 个 token；在环形布局中这些位置为空白背景。该峰与图像内容无关，而与视觉 token 序列的起点重合。
-4. **decoder 中两种位置因素混淆。** Qwen3.5 的 ViT 使用非因果 attention，按每张图像的 cu_seqlens 划分 attention 范围，token 按 2×2 block-major 顺序排列；decoder 使用 causal 计算，merger 输出的第一个 visual token 恰好对应图像左上角。因此，在 decoder 中，“序列中第一个 visual token”与“图像二维左上位置”是同一个 token，现有数据无法区分二者。
+1. **跨位置差异产生于位置编码与 attention 之后。** 在未加位置编码的 patch embedding 上，正常图各实例的分数全部为零；从 ViT 第 3 层起，正常图已经存在固定最高分位置，异常图与正常图的实例分数相关系数为 0.986–0.996。
+2. **merger 上的左上偏好并非纯位置效应。** 标准网格与错列布局的正常图在 merger 输出上均以左上实例为最高分；环形布局中最高分实例随图案变化。
+3. **decoder 末层的范数峰与内容无关。** decoder 第 32 层的全图范数峰在 18 张正常图中均位于第一行第 1 或第 2 个 token；在环形布局中这些位置为空白背景。
+4. **高范数 token 对手工读出的影响依赖层。** 在 ViT 第 18 层排除高范数 token 将正确定位数从 15/288 提高到 89/288，而在 merger 上从 66/288 降至 61/288。这些实验只修改外部分析器读取的特征，没有把修改送回网络。
+5. **ViT 中存在由 learned absolute position embedding 播种的固定位置高范数 token（实验 3.7）。** 从 ViT block 10 起，左上角、右下角与第一行出现少数固定位置的高范数 token，它们承载 block 10 之后约 56% 的位置方差；将 learned absolute position embedding（下文简称 PE）置零后这些 token 消失。PE 表左右边缘第 9–11 行存在范数为中位数 5–7 倍的异常项，二者的关系尚未检验。
+6. **decoder 中的高范数视觉 token 不承载答案所需的异常信息（实验 2.5a）。** 在指定实例判断的 activation patching 中，高范数视觉 token 组的恢复比例不超过 0.04，与随机视觉 token 相当。
 
-此外，高范数 token 对手工读出的影响依赖层：在 ViT 第 18 层排除高范数 token 将正确定位数从 15/288 提高到 89/288，而在 merger 上从 66/288 降至 61/288。这说明高范数 token 在不同层可能携带不同信息。现有实验均只修改外部分析器读取的特征，没有把修改送回网络，因此不涉及高范数 token 的功能。
+### 1.2 相关文献与本实验的定位
 
-### 1.2 相关文献与候选机制
+1. **Vision Transformers Need Registers（Darcet et al., 2024, arXiv:2309.16588）。** DINOv2 等 ViT 中约 2% 的 patch token 范数约为其余 token 的 10 倍，出现在冗余的背景 patch 上，局部信息较弱、全局信息较强；加入可学习的 register tokens 后该现象消失。
+2. **Massive Activations in Large Language Models（Sun et al., 2024, arXiv:2402.17762）。** LLM 中起始 token 与分隔符上存在固定维度的巨大激活，作用类似 bias，并吸引大量 attention。
+3. **Efficient Streaming Language Models with Attention Sinks（Xiao et al., 2024, arXiv:2309.17453）。** 序列起始 token 接收大量 attention，移除后性能显著下降。
+4. **Vision Transformers Don't Need Trained Registers（Jiang et al., 2025, arXiv:2506.08010）。** 少数 register neurons 产生高范数 token；在测试时把这些 neurons 的激活转移到额外添加的 token 上，可以在不训练的条件下得到与训练 register 相当的效果，并使 VLM 的 attention 归因更干净。
+5. **Denoising Vision Transformers（Yang et al., 2024, arXiv:2401.02957）。** ViT 特征中存在跨图像固定、与内容无关的伪影，来源被归于位置编码。
+6. **See What You Are Told: Visual Attention Sink in Large Multimodal Models（Kang et al., 2025, arXiv:2503.03321）。** LMM 的 LLM 层中，部分 visual tokens 在少数维度上具有 massive activation、接收大量 attention，移除它们不影响模型性能。
 
-已有文献报告了若干相关现象，但没有文献直接报告“固定左上角”这一现象：
-
-1. Vision Transformers Need Registers（Darcet et al., 2024, arXiv:2309.16588）发现，DINOv2 等 ViT 中约 2% 的 patch token 范数约为其余 token 的 10 倍。这些 token 出现在冗余的背景 patch 上，其位置随图像而变；它们的局部信息较弱（位置预测与像素重建误差较大），全局信息较强（以其为输入的图像分类准确率较高）。加入可学习的 register tokens 后该现象消失。
-2. Massive Activations in Large Language Models（Sun et al., 2024, arXiv:2402.17762）发现，LLM 中起始 token 与分隔符上存在固定维度的巨大激活，其数值几乎与输入无关，作用类似 bias，并吸引大量 attention。
-3. Efficient Streaming Language Models with Attention Sinks（Xiao et al., 2024, arXiv:2309.17453）发现，序列起始 token 接收大量 attention，移除这些 token 会使模型性能显著下降。
-4. Vision Transformers Don't Need Trained Registers（Jiang et al., 2025, arXiv:2506.08010）发现，少数 register neurons 产生高范数 token，在测试时把这些 neurons 的激活转移到额外添加的 token 上，可以在不训练的条件下消除高范数伪影。
-5. Denoising Vision Transformers（Yang et al., 2024, arXiv:2401.02957）发现，ViT 特征中存在跨图像固定、与内容无关的伪影，并将其来源归于位置编码。
-6. See What You Are Told: Visual Attention Sink in Large Multimodal Models（Kang et al., 2025, arXiv:2503.03321）发现，在 Qwen2-VL-7B 等模型的 LLM 层中，部分 visual tokens 与 BOS token 在相同的少数维度上具有 massive activation，接收大量 attention，而移除它们不影响模型性能。
-
-据此，本实验检验三种候选机制，它们对干预与读出给出不同的预测：
-
-| 机制 | 内容 | 适用部位 |
-| --- | --- | --- |
-| M1 位置伪影 | 位置编码或有限画布边界在相同内容上叠加随位置变化的成分；按来源分为 M1a learned absolute position embedding、M1b 2D RoPE、M1c 边界上下文 | ViT、merger，并可经 merger 传入 decoder |
-| M2 序列起点 sink | 序列中某一段的第一个 token 在固定的少数通道上形成 massive activation，接收大量 attention | 仅 decoder |
-| M3 register 挪用 | 低信息的背景 token 被网络挪用来存储全局信息，范数因此升高 | ViT、merger、decoder |
+上述工作分别报告了高范数 token 的存在（1、4）、固定维度的 massive activation（2、6）、attention sink（3、6）与位置编码伪影（5），但没有回答三个对 VLM 视觉推理重要的问题。第一，高范数 token 出现在哪些位置由什么决定：Darcet et al. 认为位置随内容而定（背景 patch），Yang et al. 认为伪影由位置编码造成，两者在同一模型中如何共存未被检验。第二，ViT 中的高范数 token 是否穿过 modality connector 进入 LLM，以及它们与 LLM 中的 visual attention sink 是否为同一组 token。第三，在需要精确空间输出的任务（坐标、行列、找不同）上，消除这些 token 是否改变模型行为。本实验以这三个问题为主线：用 PE 的翻转、相位窗口、置零与内容放置分离位置编码与内容的作用（2.2b），沿 ViT、merger 与 decoder 全程追踪范数（2.2a），并在完整模型中消融高范数 token、测量坐标与行列任务的变化（2.2d）。
 
 ### 1.3 研究问题
 
-1. **成分大小。** 在各提取位置，与内容无关的位置均值成分占特征总方差的比例是多少；高范数 token 出现在哪些位置，是否集中于少数固定通道。
-2. **来源。** 对位置编码、画布边界、图像内容位置、序列顺序与 position IDs 分别施加干预后，固定最高分位置、高范数位置与位置成分比例是否随之改变。
-3. **信息。** 与匹配的普通 token 相比，高范数 token 所含的局部信息、位置信息与全局信息是否不同。
-4. **功能。** 在完整模型中替换高范数 token 的 hidden states 或阻断对它们的 attention，是否改变实验 1.3 子任务的准确率与一般任务的 loss。
+1. **来源。** 高范数 token 首次出现在哪一个 ViT block 与哪一个 decoder 层；由 attention 还是 MLP 写入，是否由少数 register neurons 产生；出现位置由 PE、2D RoPE、图像内容（空白或有纹理）还是画布尺寸决定。
+2. **信息。** 与普通 token 相比，高范数 token 所含的全局属性（实例数量、模板、画布尺寸、是否含异常实例）、位置与自身 patch 内容是否不同。
+3. **功能。** 高范数 token 是否为 ViT 与 decoder 中的 attention sink；在完整模型中消融它们，坐标输出、T2、T3、行列回答与 RefCOCO 定位是否改变；它们是否介导此前距离读出中的位置相关成分；蓝框是否提高 token 范数，并由此使蓝框指定的 T3 更难。
+4. **跨模型对照。** Qwen3-VL-8B 的 PE 范数约为 Qwen3.5-9B 的 2.76 倍（实验 3.7），其高范数 token 的来源、位置与作用是否不同。
 
 ## 2. 总体设计
 
-本实验分为四个子实验，前三个只需要冻结模型的前向计算，第四个需要在完整模型中施加干预：
-
-| 子实验 | 内容 | 回答的问题 | 阶段 |
-| --- | --- | --- | --- |
-| 2.2a 成分分解 | 在大量不同内容的图像上估计位置均值成分与高范数分布 | 成分大小 | 第二阶段 |
-| 2.2b 来源干预 | 对 ViT 与 decoder 中的位置因素分别干预，观察峰与成分是否移动 | 来源 | 第二阶段 |
-| 2.2c 信息内容 | 在高范数 token 与匹配的普通 token 上训练相同的 probe | 信息 | 第二阶段 |
-| 2.2d 功能消融 | 测量 attention sink，并在完整模型中消融高范数 token | 功能 | 第三阶段 |
+| 子实验 | 内容 | 回答的问题 |
+| --- | --- | --- |
+| 2.2a 出现与分布 | 在空白、噪声、随机放置、网格、蓝框与自然图像上记录 ViT 全部 block、merger 与 decoder 全部层的范数图；统计首次出现层、位置频率、所在 patch 的内容与 massive 通道 | 来源（层与位置） |
+| 2.2b 来源干预 | 分解产生高范数 token 的 block 中 attention 与 MLP 的更新，定位 register neurons；对 PE（置零、均值、打乱、翻转、缩放、去除异常项、相位窗口）、2D RoPE（置零、打乱）与图像内容（在固定位置放置纹理）分别干预 | 来源（组件与位置决定因素） |
+| 2.2c 信息内容 | 在高范数 token、同位置普通 token 与随机普通 token 上训练相同的线性 probe，读出全局属性、位置与自身 patch 内容 | 信息 |
+| 2.2d 功能 | 测量 ViT 与 decoder 的 attention 质量；在完整模型中施加三类消融与随机对照，测量任务指标、位置可解释方差与 2.1 的距离读出；比较蓝框图与无框图的范数 | 功能 |
+| 2.2e 跨模型对照 | 在 Qwen3-VL-8B 上重复 2.2a、2.2b、2.2d 的主要部分 | 跨模型 |
 
 机制的判定以三类证据一致为前提：来源干预确定成分随哪一因素移动，信息读出确定其存储内容，功能消融确定模型是否依赖它。
 
 ## 3. 数据
 
-1. **合成网格图。** 取自[共享合成刺激集](../stimuli.md)的正常图（不含异常实例），四个开发模板，网格规模 3×3、6×6、10×10、20×20，含相位偏移与抖动布局。网格图中实例内容随位置周期重复，用于与 2.1 衔接。
-2. **随机放置图。** 在固定画布上随机放置随机数量（4 至 16 个）、随机模板的实例，使每个位置上的内容在图像之间独立变化，从而降低内容与位置的相关性。
-3. **自然图像。** RefCOCO validation 图像按 SHA-256 去重后缩放并裁剪到固定尺寸（448×448 与 768×768 两组），每组至少 1000 张。
-4. **无内容图像。** 纯白、纯黑、纯灰与 Gaussian 噪声画布，尺寸与上述各组一致。纯色图像中不同位置的 patch 像素完全相同，因此任何跨位置差异只能来自位置编码与边界。
+1. **空白与噪声画布。** 白、灰、黑三种纯色，边长 256、384、512、640、768、1024 pixels，另含 768×512、512×768、1024×512 三种非方形白色画布；均匀分布的 pixel 噪声画布（512 与 768，各 8 张）。纯色图像中不同位置的 patch 像素完全相同，跨位置差异只能来自位置输入与边界。
+2. **随机放置合成图（probe 集）。** 画布边长 384、512、640 pixels，每种 160 张。每张图在 64-pixel 网格的随机格子上放置 2–16 个同模板实例（模板取自四个开发模板），整体偏移 0、16 或 32 pixels；一半图像中有一个实例为颜色异常（共享刺激集的 color 第 4 级）。实例数量、模板、画布尺寸与异常存在性相互独立。
+3. **网格图与蓝框图。** 实验 1.3 的网格图（3×3、6×6、10×10、20×20 各 24 张）；T3 使用的蓝框正常图 48 张及其去掉蓝框后按相同 spec 重新渲染的无框图（重新渲染的蓝框图与原文件逐像素一致）。
+4. **自然图像。** 实验 3.4 的 RefCOCO 测试集 512-pixel 副本 300 张（保持长宽比，token 网格随图像变化）；位置可解释方差的计算另用中心正方形裁剪并缩放到 512×512 的版本。
 
-decoder 特征使用与实验 2.3 相同的前缀模板：图像位于文字“Describe the image.”之前，只运行 prefill。成分分解要求同一组图像具有相同的 token 网格，因此所有统计按画布尺寸分组计算，不同尺寸的组之间只比较无量纲比例。
+decoder 特征使用前缀模板：图像位于文字“Describe the image.”之前，只运行 prefill。
 
 ## 4. 方法
 
 ### 4.1 符号约定
 
-对固定的提取位置 $\ell$（patch embedding、ViT 第 $k$ 层、merger 或 decoder 第 $k$ 层）与固定画布尺寸的一组图像，约定：
+对固定的提取位置（ViT 第 $k$ 个 block 的输出、merger 输出或 decoder 第 $l$ 层的输出）与一张图像，约定：
 
-- $N$：组内图像数量；$P$：每张图像在该提取位置的 token 数量；$D$：特征维度（ViT 为 1152，merger 与 decoder 为 4096）。
-- $x_{n,p} \in \mathbb{R}^{D}$：第 $n$ 张图像在空间位置 $p$ 的特征向量，$p$ 按二维栅格顺序编号，未合并层先从 2×2 block-major 顺序还原到空间网格。
-- $\mu_p \in \mathbb{R}^{D}$：位置 $p$ 的跨图像均值；$\bar{x} \in \mathbb{R}^{D}$：组内全部 token 的均值。
+- $P$：该图像在该提取位置的 token 数量；$D$：特征维度（ViT 为 1152，merger 与 decoder 为 4096）。
+- $x_p \in \mathbb{R}^{D}$：位置 $p$ 的特征向量；ViT 中的 patch 先从 2×2 block-major 顺序还原到空间栅格顺序。
+- $\lVert x_p \rVert_2$：L2 范数；$m = \operatorname{median}_q \lVert x_q \rVert_2$：同一图像、同一提取位置的范数中位数。
 
-### 4.2 位置均值分解（2.2a）
+### 4.2 高范数 token 与范数比
 
-每个特征向量分解为位置均值与残差：
-
-$$
-x_{n,p} = \mu_p + r_{n,p}, \qquad \mu_p = \frac{1}{N}\sum_{n=1}^{N} x_{n,p}.
-$$
-
-其中，$\mu_p$ 表示在位置 $p$ 上与图像内容无关的平均成分，$r_{n,p} \in \mathbb{R}^{D}$ 是第 $n$ 张图像在该位置的残差。当组内图像内容在各位置上独立变化时，内容的影响在跨图像平均中相互抵消，$\mu_p$ 主要反映位置编码、边界与序列位置等固定因素。网格图的内容随位置周期重复，其 $\mu_p$ 同时包含内容成分，因此主要结论以随机放置图与自然图像为准。
-
-位置成分的大小以位置可解释方差比例衡量。为避免有限样本下均值估计带有的正偏差，将图像随机分成两半 $A$ 与 $B$，用 $A$ 估计 $\mu_p^{A}$ 与 $\bar{x}^{A}$，在 $B$ 上计算：
+位置 $p$ 的范数比与高范数指示为
 
 $$
-R^2_{\mathrm{pos}} = 1 - \frac{\sum_{n \in B}\sum_{p=1}^{P} \lVert x_{n,p} - \mu^{A}_p \rVert_2^2}{\sum_{n \in B}\sum_{p=1}^{P} \lVert x_{n,p} - \bar{x}^{A} \rVert_2^2}.
+\rho_p = \frac{\lVert x_p \rVert_2}{m}, \qquad h_p = \mathbb{1}\left[\rho_p > \tau\right], \qquad \tau = 3.
 $$
 
-分母是以全局均值预测每个 token 的误差，分子是以位置均值预测的误差。该比例对应单因素 ANOVA 中位置间方差占总方差的比例：若各位置均值相同，则 $R^2_{\mathrm{pos}}$ 在零附近；若特征几乎完全由位置决定，则 $R^2_{\mathrm{pos}}$ 接近 1。交叉估计使无位置效应时的期望值不高于零。报告两半交换后的均值，并以图像为单位做 bootstrap 95% 区间。
+以图像内中位数为基准可以消除不同图像、不同层整体范数尺度的差异；$\tau = 3$ 沿用 2026-09-30 的阈值，首次出现层另以 $\tau = 5$ 判定，以免把 ViT 浅层中 2–4 倍的弱峰误计为高范数 token。范数图即 $\rho_p$ 在空间网格上的热图。
 
-除逐层曲线外，另计算两项辅助统计：
-
-1. **位置均值的空间结构。** 对 $\{\mu_p\}_{p=1}^{P}$ 做 PCA，将前三个主成分在空间网格上绘制为 RGB 图，观察其是否呈现左上到右下的梯度、边界环或单点峰。
-2. **残差上的单图读出。** 在 2.1 的网格图上，以 $x_{n,p} - \mu_p$ 代替 $x_{n,p}$ 重新计算手工距离读出，其中 $\mu_p$ 由随机放置图估计。若定位准确率显著回升，说明 2.1 的失败主要来自本节估计的位置成分。
-
-### 4.3 高范数 token 与 massive 维度（2.2a）
-
-第 $n$ 张图像的位置 $p$ 被标记为高范数 token，当且仅当
-
-$$
-h_{n,p} = \mathbb{1}\left[ \lVert x_{n,p} \rVert_2 > \tau \cdot \operatorname{median}_{q} \lVert x_{n,q} \rVert_2 \right],
-$$
-
-其中 $\tau$ 取 3，与 2026-09-30 统计外部图像时使用的阈值一致，另以 $\tau = 5$ 检查结论对阈值的稳健性。以图像内中位数为基准，可以消除不同图像整体范数尺度的差异。各位置的高范数频率为
+对一组同一网格尺寸的 $N$ 张图像，位置 $p$ 的高范数频率为
 
 $$
 f_p = \frac{1}{N}\sum_{n=1}^{N} h_{n,p},
 $$
 
-在空间网格上绘制为热图。若 $f_p$ 集中于少数固定位置，说明高范数与位置有关（M1 或 M2）；若 $f_p$ 分散且与背景区域重合，则与 M3 的预测一致。
+其中 $h_{n,p}$ 为第 $n$ 张图像在位置 $p$ 的指示。若 $f_p$ 集中于少数固定位置，说明位置由与内容无关的因素决定；若 $f_p$ 分散且与背景区域重合，说明位置随内容而定。
 
-massive 维度的检查方法为：对每个高范数 token，记录绝对值最大的 $k = 10$ 个通道，统计各通道在全部高范数 token 中出现的频率。若少数通道在大多数高范数 token 中都出现，且这些通道在普通 token 上的绝对值接近零，则与 Sun et al. 及 Kang et al. 报告的固定维度 massive activation 相符。decoder 中另将这些通道与 BOS token、chat template 中 vision start token 的 massive 通道比较。
+**PE 表坐标。** Qwen3.5 的 PE 是 $48 \times 48$ 的可学习表，按 align-corners 双线性插值到 $h \times w$ 的 patch 网格。patch 网格中第 $r$ 行第 $c$ 列对应表坐标
 
-### 4.4 来源干预（2.2b）
+$$
+(r', c') = \left(\frac{47\,r}{h-1}, \frac{47\,c}{w-1}\right).
+$$
 
-每项干预只改变一个位置因素。以下表格给出干预内容与三种机制的预测，“峰”指正常网格图上的固定最高分实例与全图范数峰。
+若不同尺寸画布上的高范数位置换算到表坐标后重合，说明位置由 PE 表的某些项决定，而非由 patch 网格的行列编号或画布边界决定。
 
-| 编号 | 部位 | 干预 | M1 预测 | M2 预测 | M3 预测 |
-| --- | --- | --- | --- | --- | --- |
-| i | ViT | 将 learned absolute position embedding 网格水平翻转或循环平移后插值，或整体置零 | M1a：峰随网格变换移动；置零后跨位置差异显著减小 | ViT 中不适用 | 峰仍位于背景 token，位置随内容而定 |
-| ii | ViT | 将 2D RoPE 的旋转置为恒等 | M1b：峰改变或消失 | ViT 中不适用 | 高范数仍出现于背景 token |
-| iii | ViT | 将相同内容嵌入更大画布的不同偏移处 | M1a：峰停留在画布固定位置；M1c：峰随内容到边界的距离变化 | ViT 中不适用 | 峰位于背景区域，随空白分布变化 |
-| iv | ViT | 将图像水平或垂直翻转，序列顺序与位置编码不变 | 峰停留在原二维位置 | decoder 范数峰停留在第一个 visual token | 峰随背景内容翻转 |
-| v | decoder | 在图像之前插入不同长度的文本前缀 | 峰位置不变 | 若 sink 依附于视觉段起点，峰仍在第一个 visual token；若依附于全序列起点，峰转移到前缀 token | 峰位置不变 |
-| vi | decoder | 将视觉 token 的 MRoPE position IDs 整体平移 | 峰位置不变 | 若 sink 由 position IDs 决定，峰改变；若由序列顺序决定，峰不变 | 峰位置不变 |
-| vii | decoder | 反转视觉 token 的输入顺序，保持各 token 的 position IDs | 峰停留在左上 token | 若 sink 由序列顺序决定，峰转移到新的第一个 token（右下角） | 峰随内容而定 |
+**内容统计。** 每个 patch（16×16 pixels）的灰度标准差小于 0.02（灰度归一化到 0–1）时记为空白 patch。比较高范数 patch 中空白 patch 的比例与随机 patch 中空白 patch 的比例。
 
-干预 iv 的作用是分离“内容所在的二维位置”与“token 所在的位置编码”：翻转后左上角的像素内容移到右下角，而左上角 token 仍接收相同的位置编码。干预 vii 将输入置于训练分布之外，Gated DeltaNet 层的递推顺序也随之反转，因此其结论只作为辅助证据，需要与 v、vi 一致才予采用。
+**massive 通道。** 对每个高范数 token 记录绝对值最大的 10 个通道，统计各通道出现的频率。
 
-实施干预时需要考虑 decoder 的结构。Qwen3.5-9B 的 32 个 decoder 层中，只有第 4、8、12、16、20、24、28、32 层这 8 个 full attention 层（从 0 起的 block 索引为 3、7、…、31）使用 MRoPE；每个 attention head 的 256 维中只有 64 维参与旋转（partial_rotary_factor 为 0.25，mrope_section 为 [11, 11, 10]，分别对应时间、高度与宽度三个轴的频率数）。其余 24 个 Gated DeltaNet 层没有位置编码，位置信息只能来自 causal convolution 与递推顺序。因此，干预 vi 只影响 8 个 full attention 层中 64 维的旋转，而干预 v 与 vii 同时影响全部层的序列顺序。
+### 4.3 写入组件与 register neurons（2.2b）
 
-每项干预测量三个量：正常网格图上固定最高分实例的位置（沿用 2.1 的实例间平均 RMS 分数，仅作描述统计）、高范数频率热图 $f_p$、以及 $R^2_{\mathrm{pos}}$。干预前后的比较在同一批图像上进行。
+ViT block 的计算为
+
+$$
+y = x + \operatorname{Attn}(\operatorname{LN}_1(x)), \qquad z = y + \operatorname{MLP}(\operatorname{LN}_2(y)), \qquad \operatorname{MLP}(u) = W_2\,\phi(W_1 u + b_1) + b_2,
+$$
+
+其中 $x, y, z \in \mathbb{R}^{1152}$ 分别为 block 输入、attention 之后与 block 输出，$W_1 \in \mathbb{R}^{4304 \times 1152}$，$W_2 \in \mathbb{R}^{1152 \times 4304}$，$\phi$ 为 GELU（tanh 近似）。在高范数 token 首次出现的 block 中，分别比较高范数 token 与其余 token 的 $\lVert x \rVert$、attention 更新范数、MLP 更新范数与 $\lVert z \rVert$，确定大范数由哪一个子层写入。
+
+MLP 中间激活 $a = \phi(W_1 u + b_1) \in \mathbb{R}^{4304}$ 的第 $i$ 个分量称为第 $i$ 个 neuron。在 49 张图像（空白、噪声、随机放置与自然图像）的全部 token 上，计算每个 neuron 在高范数 token 上的平均激活 $\bar{a}^{\mathrm{hn}}_i$ 与在其余 token 上的平均激活 $\bar{a}^{\mathrm{oth}}_i$。register neurons 定义为同时满足下式的 neurons：
+
+$$
+\bar{a}^{\mathrm{hn}}_i > 10, \qquad \left|\bar{a}^{\mathrm{oth}}_i\right| < 0.1 .
+$$
+
+第一个条件要求该 neuron 在高范数 token 上强烈激活，第二个条件要求它在其余 token 上几乎静默；满足两者的 neurons 是一个只对少数 token 开启的开关，与 Jiang et al. 描述的 register neurons 对应。随后计算这些 neurons 经 $W_2$ 写出的向量范数占 MLP 更新范数的比例，并检查 $W_2$ 对应列中权重最大的输出通道是否与 massive 通道一致。
+
+### 4.4 位置来源干预（2.2b）
+
+每项干预只改变一个位置因素，在同一批图像（白色与灰色画布、4 张噪声画布、16 张随机放置图、16 张自然图像）上与未干预条件比较 ViT block 12 的高范数集合。
+
+| 干预 | 操作 | 若位置由 PE 决定，预测为 |
+| --- | --- | --- |
+| PE 置零 / 均值 | 每个 patch 的 PE 置零，或替换为该图像全部 patch PE 的均值 | 空白画布上的高范数 token 消失 |
+| PE 打乱 | 插值后的 PE 在 patch 之间随机置换（2 个种子） | 高范数位置随置换移动 |
+| PE 翻转 | 插值后的 PE 网格左右或上下翻转，2D RoPE 不变 | 高范数位置随之翻转 |
+| PE 缩放 | PE 乘以 0.5 或 2 | 数量随 PE 幅值变化 |
+| 去除 PE 异常项 | 将表中范数超过中位数 3 倍的项缩放到中位数范数后再插值 | 若异常项是种子，对应位置的高范数 token 消失 |
+| PE 相位窗口 | 512 画布使用 640 画布（40×40 patch）中偏移 $(r_0, c_0)$ 处 32×32 窗口的 PE | 高范数图等于 640 画布高范数图的对应裁剪 |
+| 2D RoPE 置零 / 打乱 | 全部 attention block 的 RoPE ids 置零或在 patch 之间置换 | 若位置只由 PE 决定，高范数位置不变 |
+| 内容放置 | 白色 512 画布上，以 64×64 的噪声块覆盖某一固定高范数位置，或覆盖 3 个对照位置 | 若高范数 token 只出现在空白 patch，被覆盖的位置失去高范数 token |
+
+比较指标为干预前后 block 12 高范数集合的 Jaccard 系数（翻转条件与相应翻转后的未干预集合比较）与高范数 token 数量。PE 与 RoPE 的替换复用实验 3.7 的 `vit_edit` 实现；翻转与异常项去除通过替换 PE 查表输出实现。
 
 ### 4.5 信息内容（2.2c）
 
-本节检验 M3 的核心预测：高范数 token 的局部信息较弱，全局信息较强。比较对象为高范数 token 与两类匹配的普通 token：
+在 probe 集的 480 张图像上，保存 ViT block 6、12、20、26 与 merger 输出的三组 token 特征：
 
-1. **内容匹配 token。** 同一图像中、不属于高范数的 token，其对应 32×32 像素区域的像素方差与高范数 token 最接近，通常同为背景。
-2. **位置匹配 token。** 另一张同组图像中相同位置 $p$ 上的 token，且该 token 在该图像中不属于高范数。
+1. **高范数 token**：该层判为高范数的 token（每张图像至多 16 个）。merger 上使用包含 block 12 高范数 patch 的 merged token。
+2. **同位置普通 token**：白色画布上相同网格尺寸的高范数位置中，在本图像中未成为高范数 token 的 token。它们与高范数 token 共享位置输入。
+3. **随机普通 token**：每张图像随机选取与高范数 token 数量相同的普通 token。
 
-内容匹配控制局部像素，位置匹配控制位置编码。三组 token 的数量相同，每张图像最多取相同数量的 token，避免少数图像主导结果。在三组 token 上分别训练相同结构的 probe（线性 probe 为主，一层隐藏层 MLP 作容量对照）：
+另以每张图像中普通 token 的均值作为图像级读出的参照。图像按 3:1 划分训练与测试，每组训练相同的线性读出：
 
-| 信息类别 | 探测目标 | probe 输出与指标 |
+| 信息类别 | 探测目标 | 读出与指标 |
 | --- | --- | --- |
-| 局部 | 该 token 对应 32×32 像素区域（下采样到 8×8 灰度） | 线性回归，测试集 $R^2$ |
-| 局部 | 区域内是否含笔画、笔画颜色 | 分类，balanced accuracy |
-| 位置 | token 的行与列 | 分类，exact match 与平均行列误差 |
-| 全局 | 图像模板类别或 RefCOCO 图像中面积最大物体的类别 | 分类，macro-F1 |
-| 全局 | 网格规模（实例数量） | 分类，balanced accuracy |
-| 全局 | 图中是否含异常实例、异常属性类型 | 分类，AUROC 与 macro-F1 |
+| 局部 | 该 token 对应 16×16 patch 的 4×4 平均池化灰度 | ridge 回归，测试集 $R^2$ |
+| 位置 | token 的归一化行列 $(r/(h-1), c/(w-1))$ | ridge 回归，测试集 $R^2$ |
+| 全局 | 模板（4 类）、画布尺寸（3 类）、是否含异常实例（2 类）、实例数量（2–5、6–10、11–16 三档） | ridge 分类器（one-hot 目标的 ridge 回归取最大值），balanced accuracy |
 
-高范数 token 的大范数可能使线性 probe 的优化与正则化不同于普通 token。因此每个 probe 在两种输入上训练：原始特征与逐 token L2 归一化后的特征。M3 的预测为：高范数 token 的局部与位置读出低于两类匹配 token，全局读出高于两类匹配 token，且该差异在归一化后仍然存在。
+正则化系数在训练集的 20% 验证划分上选择。每个读出另在逐 token L2 归一化的特征上训练，以排除范数差异对读出的影响。合成图中的高范数 token 全部位于空白 patch，自身内容为常数，局部读出因此改在自然图像上比较高范数 token 与随机普通 token。
 
 ### 4.6 功能（2.2d）
 
-**Attention sink 测量。** 对每个 attention 层与 head，计算高范数 token 集合 $S$ 接收的 attention 富集比：
+**ViT attention 质量。** 对 ViT block $k$ 的第 $j$ 个 head，记 softmax attention 矩阵为 $A^{(k,j)} \in \mathbb{R}^{P \times P}$，由 block 输入经 qkv 投影与 2D RoPE 重新计算得到。高范数集合 $S$（block 12 判定）获得的 attention 质量为
 
 $$
-e = \frac{\frac{1}{|Q|}\sum_{i \in Q}\sum_{j \in S} a_{ij}}{|S| \,/\, |K|},
+M_S^{(k,j)} = \frac{1}{P}\sum_{i=1}^{P}\sum_{q \in S} A^{(k,j)}_{iq}.
 $$
 
-其中 $Q$ 是 query token 集合，$K$ 是可见 key token 集合，$a_{ij}$ 是 query $i$ 对 key $j$ 的 attention 权重。分子是集合 $S$ 平均获得的 attention 质量，分母是 $S$ 在可见 token 中所占的比例；$e = 1$ 表示 attention 与 token 数量成比例，$e \gg 1$ 表示 $S$ 是 attention sink。ViT 的全部层均可测量；decoder 只有 8 个 full attention 层具有显式 attention 矩阵，测量两类 query：其余 visual tokens，以及问题文本 token 与最后一个 prompt token。
+$M_S$ 是全部 query 平均分给集合 $S$ 的 attention 比例；与随机选取的同样数量 token 的 $M_R$ 比较，$M_S \gg M_R$ 说明 $S$ 是 attention sink。富集比 $e = M_S / (|S|/P)$ 表示 $S$ 获得的 attention 是其数量占比的多少倍。
 
-**完整模型消融。** 在第 $\ell$ 层施加两种干预，并以相同数量、随机选择的普通 token 施加相同干预作为对照（5 个随机种子）：
+**decoder attention 质量。** 在 Qwen3.5 的 8 个 full attention 层上，由 prefill 的 pre-hook 重新计算 softmax attention（复用实验 3.5 的 `attention_readout`，重算输出与模块输出的相对误差均有记录），query 为最后一个 prompt token 与 16 个随机 visual tokens，统计其 attention 落在 4 个前缀 token、全部 visual tokens、包含 ViT 高范数 patch 的 visual tokens 与第一个 visual token 上的质量。Gated DeltaNet 层没有显式 attention 矩阵，不在测量范围内。
 
-1. **均值替换。** 把高范数 token 的 hidden state 替换为同一图像中普通 token 的均值，然后继续后续计算。
-2. **attention knockout。** 在 ViT 各层与 decoder 的 full attention 层中，将后续 token 对高范数 token 的 attention logit 置为负无穷。Gated DeltaNet 层没有 attention 矩阵，不施加 knockout，因此该干预只阻断 full attention 层的读取路径，在文档中按此限定解释。
+**完整模型消融。** 消融施加在高范数 token 首次出现的 ViT block（$k_0 = 10$）的输出上，并随前向计算向后传播。记该 block 输出中高范数集合为 $S$、其余 token 集合为 $\bar{S}$，三类消融与对照为：
 
-测量指标为：实验 1.3 的 T3、T5、T6 准确率与 AUROC（使用模型能够答对的条件），RefCOCO bbox 输出的 IoU≥0.5 比例，以及 COCO caption 在 teacher forcing 下的平均 token loss。若高范数 token 是与 Kang et al. 报告相同的无用 sink，消融不应改变任务指标；若其承担 register 功能，均值替换会损害依赖全局信息的任务。
+$$
+\text{均值替换：}\ x_p \leftarrow \frac{1}{|\bar{S}|}\sum_{q \in \bar{S}} x_q \ (p \in S); \qquad \text{置零：}\ x_p \leftarrow 0 \ (p \in S); \qquad \text{neuron 置零：}\ a_i \leftarrow 0 \ (i \in \mathcal{R}).
+$$
 
-**测试时 register 转移。** 参照 Jiang et al. 的方法，在 ViT 中定位激活与高范数位置共现的 register neurons，将其激活转移到额外附加的 token 上。该额外 token 需要在 merger 之前移除，以保持 2×2 合并的空间结构。比较转移前后的高范数分布、2.3 的属性 probe 读出与上述任务指标，可以检验移除伪影是否改善细节读出。
+其中 $\mathcal{R}$ 为 4.3 节定义的 register neurons，neuron 置零作用于 block $k_0$ 的 MLP 中全部 token。均值替换与置零删除高范数 token 在 block $k_0$ 之后携带的全部内容；neuron 置零只阻止 register neurons 写入，保留这些 token 的 attention 更新与此前的残差内容，近似 Jiang et al. 的测试时 register 去除（不添加额外 token，以保持 merger 的 2×2 合并结构）。随机对照在每张图像中随机选取 $|S|$ 个普通 token 施加同样的均值替换（2 个种子）。消融只修改 ViT 内部的计算，merger 与 decoder 不变；Qwen3-VL 中 DeepStack 从 block 9、17、25（0 起的 block 索引 8、16、24）取特征，消融同样影响后两者。
 
-## 5. 指标
+测量的任务与指标如下（thinking off）：
+
+| 任务 | 数据 | 指标 |
+| --- | --- | --- |
+| 单圆点坐标（实验 3.5） | 白色 512 画布上 36 个网格位置 × 直径 32、64 pixels，point 与 bbox 两种格式 | 命中率，中心误差（0–1000 坐标），bbox IoU |
+| T2 两实例比较 | 实验 1.3 主问法，240 条（变体与网格规模平衡） | 准确率，AUROC |
+| T3 指定实例判断 | 实验 1.3 修订问法（计划第 6.8 条），蓝框与行列描述各 240 条 | 准确率，AUROC |
+| T4 定位，直接回答 | 行列格式与 point 格式各 200 条（网格规模平衡） | 严格评分准确率 |
+| T4 定位，先推理后回答 | 实验 1.3 显式推理问法的行列格式 72 条，max_new_tokens 为 1024 | 严格评分准确率 |
+| RefCOCO | 实验 3.5 使用的 3.4 测试集 300 条，point 与 bbox 两种格式 | point 命中率、bbox IoU≥0.5 比例、中心误差 |
+
+yes/no 任务以首个答案 token 的判别分数 $s = z_{\mathrm{Yes}} - z_{\mathrm{No}}$ 作答（$s > 0$ 判为 Yes），由左填充的批量 prefill 计算；生成任务使用 `generate_batch`。比例给出 Wilson 95% 区间，与未消融条件的差异以逐样本配对的 exact McNemar 检验，AUROC 差异以 bootstrap 区间表示。
+
+**位置可解释方差。** 为检验高范数 token 是否介导此前距离读出中的位置相关成分，对同一网格尺寸的一组图像，以交叉估计的位置可解释方差衡量位置成分的比重。将图像按索引奇偶分为两半 $A$ 与 $B$，用 $A$ 估计位置均值 $\mu^{A}_p$ 与全局均值 $\bar{x}^{A}$，在 $B$ 上计算
+
+$$
+R^2_{\mathrm{pos}} = 1 - \frac{\sum_{n \in B}\sum_{p} \lVert x_{n,p} - \mu^{A}_p \rVert_2^2}{\sum_{n \in B}\sum_{p} \lVert x_{n,p} - \bar{x}^{A} \rVert_2^2}.
+$$
+
+分母是以全局均值预测每个 token 的误差，分子是以位置均值预测的误差；交叉估计使无位置效应时的期望值不高于零。报告两半交换后的均值，并另报告从分子与分母中同时去掉白色画布高范数位置（merger 与 decoder 上为包含这些位置的 merged token）后的结果。图像组为 160 张 512 随机放置图与 160 张 512×512 自然图像，条件为未消融、均值替换、随机对照、neuron 置零与 PE 置零。
+
+**2.1 距离读出。** 在 2.1 的 6×6 小人图（384×384，缺口 4 与 8 pixels，36 个目标位置与 1 张正常图）上，以每个实例的特征到全部实例逐维中位数的 RMS 距离作为异常分数，记录分数最高的实例是否为目标，在 ViT block 18、merger 与 decoder 第 16 层上比较上述条件。
+
+**蓝框效应。** 对蓝框图与无框图，取与蓝框边带（框线内外各 4 pixels）相交的 patch，计算各层这些 patch 的平均范数之比（蓝框图 / 无框图），并统计边带上的高范数 token 数量。若蓝框使这些 token 成为高范数 token，则可能吸收 attention 或干扰定位。
+
+## 5. 指标汇总
 
 | 指标 | 定义 | 子实验 |
 | --- | --- | --- |
-| $R^2_{\mathrm{pos}}$ | 交叉估计的位置可解释方差比例 | 2.2a、2.2b |
-| 高范数频率 $f_p$ | 各位置成为高范数 token 的图像比例 | 2.2a、2.2b |
-| massive 通道重合度 | 高范数 token 的 top-10 通道集合在图像间的平均 Jaccard 系数 | 2.2a |
-| 峰位置移动 | 干预前后固定最高分实例与范数峰的位置是否改变，以干预前后的行列差表示 | 2.2b |
-| probe 读出差 | 高范数 token 与匹配 token 的 probe 指标之差 | 2.2c |
-| 富集比 $e$ | 高范数 token 获得的 attention 质量与其数量占比之比 | 2.2d |
-| 任务指标变化 | 消融相对未干预的准确率、AUROC、IoU 比例与 loss 变化，减去随机对照的变化 | 2.2d |
-
-比例给出 Wilson 95% 区间，连续指标给出以图像为单位的 bootstrap 95% 区间。
+| 范数比 $\rho_p$、高范数频率 $f_p$ | 4.2 节 | 2.2a、2.2b |
+| 首次出现 block | 第一个存在 $\rho_p > 5$ 的 block | 2.2a |
+| 空白 patch 比例 | 高范数 patch 与随机 patch 中空白 patch 的比例，Wilson 区间 | 2.2a |
+| 子层更新范数、register neurons | 4.3 节 | 2.2b |
+| Jaccard 系数 | 干预前后 block 12 高范数集合的交并比 | 2.2b |
+| probe 读出 | 测试集 $R^2$ 与 balanced accuracy | 2.2c |
+| attention 质量 $M_S$、富集比 $e$ | 4.6 节 | 2.2d |
+| 任务指标变化 | 准确率差、McNemar p 值、AUROC 差、中心误差差 | 2.2d |
+| $R^2_{\mathrm{pos}}$ | 4.6 节 | 2.2d |
 
 ## 6. 可视化
 
-1. $R^2_{\mathrm{pos}}$ 随提取位置变化的曲线，每类数据（随机放置图、自然图像、纯色图像）一条。
-2. 各提取位置的 $f_p$ 热图与 $\mu_p$ 的 PCA 伪彩色图，按层排成网格。
-3. massive 通道频率条形图，decoder 中标出 BOS 与 vision start token 的 massive 通道。
-4. 每项来源干预的前后对照：输入图、干预前与干预后的范数图与实例分数图并列，标出峰位置。
-5. 2.2c 的 probe 指标分组条形图，三组 token 并列，按信息类别分面。
-6. 2.2d 的富集比热图（层 × head）与消融效应的森林图（点估计与 95% 区间，随机对照并列）。
+1. 逐层范数图：ViT block、merger 与 decoder 层并列，统一 log 色标与色条，红色空心圆标出高范数 token。
+2. 出现曲线：各数据组最大范数比与高范数数量随 ViT block 的变化，decoder 视觉 token 的最大范数比随层的变化。
+3. 高范数频率热图与 PE 表坐标散点图（以 PE 表范数热图为底）。
+4. 写入组件条形图与 register neuron 激活箱线图。
+5. 来源干预的范数图网格、相位窗口与内容放置图。
+6. ViT attention 质量曲线与 attention 接收图，decoder attention 质量曲线。
+7. probe 分组条形图、$R^2_{\mathrm{pos}}$ 曲线、消融效应森林图与蓝框效应曲线。
 
-## 7. 结果模式与解释
+## 7. 解释范围
 
-| 结果模式 | 解释 |
-| --- | --- |
-| 纯色图像上 $R^2_{\mathrm{pos}}$ 很高，干预 i 使峰随位置编码网格移动 | 位置相关成分主要来自 learned absolute position embedding（M1a） |
-| 干预 iii 中峰随内容到边界的距离移动，干预 i 无效 | 边界上下文是主要来源（M1c） |
-| 干预 v 后 decoder 范数峰仍在第一个 visual token，干预 vii 后峰转到新的第一个 token，massive 通道与 vision start token 重合 | decoder 末层范数峰是视觉段起点上的 sink（M2） |
-| 高范数 token 的 $f_p$ 分散于背景，局部读出弱、全局读出强，均值替换损害全局任务 | 高范数 token 承担 register 功能（M3） |
-| 高范数 token 是强 attention sink，但消融不改变任务指标 | 与 Kang et al. 的报告一致，高范数 token 不承载任务所需信息 |
-| 残差特征上的单图读出显著回升 | 2.1 中单图读出的失败主要由位置均值成分造成，位置成分可以作为可移除的偏置处理 |
-
-不同部位可以对应不同机制，例如 ViT 中间层符合 M3、decoder 末层符合 M2。报告按提取位置分别给出结论。
+1. 只有当来源干预、信息读出与功能消融三者给出一致结论时，才以 register 或 attention sink 命名某一部位的现象；单项证据只报告为与某机制相容。
+2. PE 置零、打乱、翻转与 RoPE 干预使模型处于训练分布之外，其效应可能部分来自分布偏移本身，因此只用于判断高范数位置的决定因素，不用于任务指标。
+3. 高范数阈值是描述性定义；不同阈值下的首次出现层与位置需一致才予采用。
+4. 自然图像中内容与位置存在统计相关（如天空常在上方），自然图像的 $R^2_{\mathrm{pos}}$ 包含这一部分，需与随机放置图对照解释。
 
 ## 8. 运行与产物
 
-1. 代码实现为 `analysis_tools/representation/positional_component.py`（2.2a–2.2c）与 `analysis_tools/representation/positional_ablation.py`（2.2d），干预使用 PyTorch forward hooks 与对 position IDs、position embedding 的显式替换，2.2d 与实验 2.5 共用 hook 工具。
-2. Bash 入口为 `scripts/analysis/representation/positional_component.sh` 与 `scripts/analysis/representation/positional_ablation.sh`，提取位置、图像组、阈值 $\tau$ 与随机种子集中于脚本顶部。
-3. 产物保存于 WORK_DIR 的 `analysis/representation/<日期>_positional_component/` 与 `analysis/representation/<日期>_positional_ablation/`，包括图像 metadata、逐层统计、干预配置、probe 权重与指标、消融前后的模型输出。
-
-## 9. 解释范围
-
-1. 只有当来源干预、信息读出与功能消融三者给出一致结论时，才以 M1、M2 或 M3 命名某一部位的现象；单项证据只报告为与某机制相容。
-2. 干预 i、ii、vii 使模型处于训练分布之外，其效应可能部分来自分布偏移本身，需以干预后模型在一般任务上的 loss 变化作为参照。
-3. 高范数阈值是描述性定义，不能单独据此认定 register；register 的判定依赖 2.2c 与 2.2d 的结果。
-4. $\mu_p$ 的估计依赖图像分布；在自然图像上，内容与位置存在统计相关（如天空常在上方），因此自然图像的 $R^2_{\mathrm{pos}}$ 包含这一部分，需与随机放置图和纯色图像的结果对照解释。
+1. 引擎为 `analysis_tools/representation/high_norm.py`（高范数检测、ViT 消融、PE 替换、attention 质量、批量判别分数与 $R^2_{\mathrm{pos}}$ 累加器），阶段驱动为 `high_norm_run.py`（neurons、survey、source、attention、posvar、ablation、spot），CPU 分析与作图为 `high_norm_analysis.py` 与 `high_norm_figures.py`。
+2. Bash 入口为 `scripts/analysis/representation/high_norm.sh`，模型、阶段、样本量、消融条件与批大小集中于脚本顶部。
+3. 产物保存于 WORK_DIR 的 `analysis/representation/2026-10-16_high_norm/<模型标签>/`，文档用图位于 `docs/analysis/representation/figures/high_norm/`。

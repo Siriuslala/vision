@@ -133,3 +133,70 @@ class MetricTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SupplementTests(unittest.TestCase):
+    """Model-free checks of the C4 patching hooks, RefCOCO scoring and C5 insertion helpers."""
+
+    def test_insert_band_moves_content(self):
+        from PIL import Image
+        im = Image.new('RGB', (64, 64), (255, 255, 255))
+        im.putpixel((10, 40), (255, 0, 0))
+        out = cr.insert_band(im, 'v', 32, 32)
+        self.assertEqual(out.size, (64, 96))
+        self.assertEqual(out.getpixel((10, 72)), (255, 0, 0))
+        out = cr.insert_band(im, 'h', 0, 32)
+        self.assertEqual(out.getpixel((42, 40)), (255, 0, 0))
+
+    def test_insert_ids_shifts_rows_and_tail(self):
+        prep = fake_prepared(4, 4, before=3, after=2)
+        pos = cr.insert_ids(prep, 'v', 2, 2)
+        s, e = 3, 19
+        h = pos[2, 0, s:e].view(4, 4)[:, 0].tolist()
+        self.assertEqual(h, [3, 4, 7, 8])
+        self.assertTrue(torch.equal(pos[2:, 0, s:e].view(2, 4, 4)[1], prep.pos[3, 0, s:e].view(4, 4)))
+        self.assertEqual(pos[1:, 0, e].tolist(), [(prep.pos[1, 0, e] + 2).item()] * 3)
+
+    def test_point_conventions(self):
+        from analysis_tools.position.coordinate_readout_supp import point_conventions
+        box = [100, 100, 200, 200]
+        r = point_conventions([300, 300], box, (500, 500))      # norm -> (150, 150): hit; pixel (300, 300): miss
+        self.assertTrue(r['h_norm'] and not r['h_pix'] and r['h_any'])
+        r = point_conventions([150, 150], box, (500, 500))      # norm -> (75, 75): miss; pixel: hit
+        self.assertTrue(r['h_pix'] and not r['h_norm'])
+        self.assertAlmostEqual(r['chance_norm'], 0.04)
+        self.assertAlmostEqual(r['chance_pix'], 0.01)
+        self.assertAlmostEqual(r['chance_any'], 0.05)          # regions [200,400]^2 and [100,200]^2 are disjoint
+
+    def test_refcoco_swaps_disjoint(self):
+        from analysis_tools.position.coordinate_readout_supp import refcoco_swaps
+        target = [r * 10 + c for r in (1, 2) for c in (2, 3, 4)]
+        regs = refcoco_swaps(target, (8, 10))
+        for g in regs:
+            self.assertTrue(g['valid'])
+            self.assertFalse(set(g['region']) & set(target))
+        self.assertEqual(regs[0]['dc'], 4)
+        self.assertFalse(refcoco_swaps(list(range(10)) + list(range(10, 20)), (3, 10))[1]['valid'])
+
+    def test_mixer_edit_copies_rows(self):
+        class Proj(torch.nn.Module):
+            def forward(self, x):
+                return x
+        class Attn(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.o_proj, self.head_dim = Proj(), 2
+        class Block(torch.nn.Module):
+            block_type = 'full_attention'
+            def __init__(self):
+                super().__init__()
+                self.self_attn = Attn()
+        class RT:
+            layers = [Block()]
+        rt = RT()
+        x = torch.arange(2 * 3 * 4, dtype=torch.float).view(2, 3, 4)
+        with cr.MixerEdit(rt, [(1, 1, 1, 0)], start=1):
+            y = rt.layers[0].self_attn.o_proj(x)
+        self.assertTrue(torch.equal(y[1, 1:, 2:], x[0, 1:, 2:]))
+        self.assertTrue(torch.equal(y[1, :1], x[1, :1]))
+        self.assertTrue(torch.equal(y[1, :, :2], x[1, :, :2]))
