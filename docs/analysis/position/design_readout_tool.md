@@ -351,3 +351,55 @@ $$
 ### 10.7 操作
 
 运行入口为 `scripts/analysis/position/readout_tool_r2.sh`，代码为 `analysis_tools/position/readout_tool_r2*.py`，产物位于 `$WORK_DIR/analysis/position/2026-10-20_readout_tool_r2/`。阶段依次为 prepare（CPU）、pca 与 capture（GPU，可分片）、own、spotcheck 与 freecall（GPU）、ordtool、digitcap、dissoc 与 ordcoord（GPU）、fit 与 fit_digit（读出器训练，小显存）、evaluate 与 figures（CPU）。
+
+## 11. 第三轮（2026-10-21）
+
+第三轮结果见[实验 3.9 第三轮结果](results_2026-10-21_readout_tool_r3.md)。第二轮的最终工具读取 8 个 full-attention 层共 128 个 head 的 attention 分布，在 RefCOCO 上与模型持平，在“换算”困难的合成图像上大幅领先。PI 的评审提出四点要求：说明工具与实验 3.11 的 attention 峰值读出在机制上的区别，并检验自然图像与合成图像是否需要不同的输入；把输入压缩到工业部署可以接受的规模；分析工具在自然图像上的失败模式并据此改进；在相同测试集上与实验 3.13 的定向微调比较。本节给出对应的设计。
+
+### 11.1 工具与 3.11 读出的分解
+
+实验 3.11 的读出与第二轮工具可以沿四个维度对齐：
+
+1. **读取位置。** 3.11 在直接作答格式中读取坐标首位数字之前的 query 位置；工具在调用格式中读取 `approx_point` 的 `[` 之后、首位数字之前的 slot。两者都是“下一个 token 为坐标首位数字”的位置。第一轮的 target_end（目标描述的最后一个 token）作为对照。
+2. **head。** 3.11 只用 L20 H11；第二轮工具用 128 个 head。
+3. **读出方式。** 3.11 取 attention 最大的 token 的 3×3 邻域加权中心（argmax 型，零训练）；工具以卷积读出器学习 pointer 分布、亚 token 偏移与边框距离。
+4. **输出。** 3.11 只给出点；工具同时给出点与 bbox，且可以使用 visual token 的内容特征。
+
+本轮在第二轮已采集的特征上逐级替换这些维度（“读出阶梯”），测量每一步在 RefCOCO 与各合成图像族上的误差变化。阶梯中的零训练读出包括：3.11 的峰值解码、全图 attention 质心、以 attention 阈值区域的外接框中心为点的“attention 范围”解码，以及从峰值出发、按内容特征与原型的余弦相似度做区域生长的“内容范围”解码（原型为 attention 最高的 3 个 token 的内容向量均值，阈值在验证集上选择）。实验 3.11 第二轮报告 RefCOCO 上的读取 head 分为读取最小边与读取最大边两类（L24 H7 与 L24 H5 为代表），本轮同时检验“最小边 head 峰值与最大边 head 峰值构成的框”这一零训练读出；3.11 第二轮的最终结果把边缘 head 分为左上边缘组（L20 H0，L24 H1、H2、H7、H12）与右下边缘组（L20 H10，L24 H5、H6、H8、H9，L28 H0），相应的边缘对解码把每组 attention 平均后各取峰值 3×3 中心作为框的两个角点，以两角点的中点作为中心估计。
+
+### 11.2 精简输入
+
+记被选中的 head 集合为 $\mathcal{K}$，$|\mathcal{K}| = k$。读出器的输入为 $k$ 个 head 在 slot 处的 attention 对数比、层 0 与层 16 的内容特征（各 64 维 PCA）以及粗略坐标特征，读出器结构、训练数据、损失与选择规则与第二轮完全相同。比较的 head 集合为：
+
+| 名称 | $k$ | head |
+| --- | --- | --- |
+| k0 | 0 | 无（只用内容与粗略坐标） |
+| k1 | 1 | L20 H11 |
+| k2 | 2 | L20 H11、L16 H0（3.11 在网格上最好的两个解码 head） |
+| k4 | 4 | L20 H11、L20 H10、L24 H5、L32 H8（3.11 RefCOCO patching 中因果作用最大的 4 个） |
+| edge3 | 3 | L20 H11、L24 H7、L24 H5（3.11 第二轮的中心、最小边、最大边读取 head） |
+| edge5 | 5 | L20 H11 加左上边缘组的 L24 H7、L20 H0 与右下边缘组的 L24 H5、L20 H10（3.11 第二轮最终结果） |
+| edge12 | 12 | L20 H11 加两组全部 11 个边缘 head |
+| rank4 | 4 | 零训练峰值解码在验证集上误差最低的 4 个 head |
+| k8 | 8 | k4 加 L16 H0、L24 H12、L24 H4、L24 H0 |
+| L20 | 16 | 层 20 全部 head |
+| L16L20 | 32 | 层 16 与层 20 全部 head |
+| all | 128 | 全部（第二轮工具） |
+
+另有三项变化：去掉内容特征（k1 只用 H11 的 attention）、只保留层 16 的内容特征、在输入中加入一个“范围通道”（每个 token 的内容向量与被选 head attention 最高的 3 个 token 的原型向量的余弦相似度）。k1、k4 与 all 各用 3 个训练种子重复，以估计种子方差。
+
+**与 flash attention 兼容的输入。** 为回答“能否完全不取 attention 概率”，另采集一个分层抽样子集（训练 8000、验证至多 600、RefCOCO 测试 600、其余测试集每组至多 150，共 10,700 条），在 slot 处记录层 16、20、24 的 o_proj 输入（16 个 head 的 gated 输出，各 256 维），以及层 20 中 H11 所在 KV head 的全部 visual token 的 key（RoPE 之前）与 value。这些量在常规推理中本来就会计算或缓存。读出器包括：以 H11 输出向量、层 20 全部 head 输出、层 16/20/24 全部 head 输出为输入的 ridge 回归（直接回归与以粗略坐标为基准的残差回归），以及以 slot 的层 20 hidden state 为 query、在层 20 的 key/value cache 上打分的学习型 pointer。同一次采集还记录层 20 与 24 全部 head 在 slot 之前 3 个位置的 attention，用于检验实验 3.12 第二轮“坐标在数字之前 1–2 个 token 读取”的结论对工具读取位置的含义。
+
+**成本口径。** 部署成本的关键在于需要接触多少层、是否需要 attention 概率。$k$ 个 head 在一个 query 处的 attention 行由 slot 的 query 与 KV cache 中的 key 直接计算，计算量为 $2 k d L$（$d = 256$ 为 head 维度，$L$ 为序列长度），不改变 flash attention 的前向计算；内容特征需要在 prefill 时对 visual token 的层 0 与层 16 状态做 64 维投影并保存。
+
+### 11.3 失败模式
+
+在 RefCOCO 测试集（1562 条）上标注每条记录的目标分割 mask、同一 COCO 图像中其他 RefCOCO 标注物体的框（RefCOCO 选取的图像至少含两个同类物体，这些框主要是同类干扰物），并据此计算：目标框面积占比；其他标注物体的数量（杂乱程度）；被其他物体框覆盖的最大比例（遮挡的代理量）；工具点与模型点落在目标、其他标注物体或背景上的联合分布（选择错误是否从模型继承）；点命中时 bbox 面积与真值面积之比（范围错误）；以及点在目标框内的归一化位置与是否落在 mask 上（显著部位偏差）。
+
+### 11.4 与定向微调的比较
+
+实验 3.13 用 LoRA 在 3200 条精确坐标样本上微调模型，测试集包含 RefCOCO 400 条（point、bbox 各半）、单个红色圆的横纵扫描、6×6/10×10/20×20 网格（训练只含其他尺寸）、clutter 与 chart_ui（族留出）以及 flat。本轮在 3.13 的测试图像上按第二轮协议采集工具特征，把工具的点与 bbox 写成模型 JSON 格式的答案文本，用 3.13 的打分函数与分组统计计分，因此两种方法使用相同的样本、命中规则与聚合方式。工具的训练数据含 clutter 与 chart_ui 的训练场景，3.13 的训练数据含其他尺寸的网格；为对齐留出族，另训练去掉 clutter 与 chart_ui 训练场景（及其验证场景）的工具变体（记为 nocc）。
+
+### 11.5 操作
+
+运行入口为 `scripts/analysis/position/readout_tool_r3.sh`，代码为 `analysis_tools/position/readout_tool_r3*.py`，产物位于 `$WORK_DIR/analysis/position/2026-10-21_readout_tool_r3/`。阶段依次为 annotate、zeroshot 与 edges（CPU）、fit（读出器训练，小显存，可按 `FIT_ONLY` 分进程）、capture_heads 与 capture_tf（GPU）、fit_vec（CPU）、evaluate、compare 与 figures（CPU）。

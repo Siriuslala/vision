@@ -28,6 +28,9 @@
 | 1.3 | 能力分解 | 测量六个子任务的准确率随实例数量与差异幅度的变化，定位瓶颈 | 已完成；[设计](design_decomposition.md)，[结果](results_2026-10-13_decomposition.md) |
 | 1.3 补充 | 能力分解的补充条件 | T3 问法修订、非方形网格、固定画布与环形布局，检验 T3 偏置、序号多计与坐标压缩的来源 | 已完成；[结果](results_2026-10-14_decomposition_supplement.md) |
 | 1.4 | 序号偏差与 token 网格 | 以单元尺寸 × 实例数量的全因子网格、相位平移与行数条件，区分序号 +1 偏差来自每实例 token 数、轴长、实例数量还是边界对齐 | 已完成；[结果](results_2026-10-15_ordinal_token_grid.md) |
+| 1.5 | 行列序号的机制 | 以删除、平移实例与序数 probe、steering 检验行列序号来自实例计数还是槽位换算 | 已完成；[设计](design_ordinal_mechanism.md)、[结果](results_2026-10-16_ordinal_mechanism.md) |
+| 1.6 | PE 放大与 T0 图像变化 | 比较 PE ×1、×2、×2.76 在网格、BabyVision 与 RefCOCO 上的行为，并构造逐图像变化的 T0 计数数据 | 已完成并结题；[结果](results_2026-10-16_pe_scaling_t0.md) |
+| 1.7 | 思维链的行为与机理 | 对思维链失败类型做规则编码，以截断、改写行号与先答后释检验忠实性，以缓存替换与 attention 探测追踪推理阶段的信息来源 | 已完成；[设计](design_cot_mechanism.md)、[结果](results_2026-10-21_cot_mechanism.md) |
 
 实验 1.3 的子任务与刺激同时用于问题 4 的模型对照（实验 4.2）和问题 5 的局部重读，因此其实现需要支持更换模型和替换视觉输入。
 

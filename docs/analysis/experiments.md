@@ -24,14 +24,21 @@
 | 坐标读取 | `analysis/position/2026-10-16_coordinate_value_r2/` | 实验 3.6 第二轮：多种答案格式的数位输出、attention/MLP/head 输出的几何、unembedding 子空间分析、L20 H11 的 path patching、MLP 消融与 neuron 调谐 |
 | 坐标读取 | `analysis/position/2026-10-16_readout_tool/` | 实验 3.9：20,282 个样本的 hidden state 与 attention 读出器训练与评估、12.5k 次模型自身 point/bbox 生成的配对比较、7,680 次工具上下文下的行列作答与 918 次自由工具调用；特征与图像缓存于 `$DATA_DIR/scratch/` |
 | 坐标读取 | `analysis/position/2026-10-20_readout_tool_r2/` | 实验 3.9 第二轮：25,328 个样本（RefCOCO、第一轮合成集与五级真实感合成集）的槽位 attention、内容特征与 hidden state 捕获，含与不含 attention 的读出器比较，1.5 刺激上的工具读数与 200 张网格图像的坐标–序号干预；全部数字汇总于 `tool_r2/results_r2.json` |
+| 坐标读取 | `analysis/position/2026-10-21_readout_tool_r3/` | 实验 3.9 第三轮：25 个读出器（含 1、4、128 个 head 与不含杂物/图表训练数据的变体），10.7k 个样本的 head 输出与 L20 K/V 捕获，3.13 测试集 997 次调用的重新捕获与比较 |
 | 坐标读取 | `analysis/position/2026-10-20_rowcol_mechanism/` | 实验 3.10：1280 张槽位网格的门控与计数 probe 特征、512 张边界干预及两组各 256 张的后续干预、128 张 8×8 网格的 head 类别门控干预、192 张直接作答与先推理后作答对照、384 张输出顺序交换 |
 | 坐标读取 | `analysis/position/2026-10-20_coordinate_flow/` | 实验 3.11：11 种输出格式的 496 次生成，全部 full-attention head 的逐一、逐层与留一 patching，11 种条件的图像 KV 子集替换，2.5e 的 698 个回答上 33 个位置 × 8 个位置组的残差追踪，560 张图像 6 个位置的位置场 |
+| 坐标读取 | `analysis/position/2026-10-21_coordinate_flow_natural/` | 实验 3.11 第二轮：RefCOCO、合成多形状、圆盘与网格的 689 次贪心作答，230 张图像上 what/where 配对的 head、层集合、留一与 DeltaNet 分组 patching，348 张图像的上下翻转与 attention 捕获，484 例 head 集合均值消融 |
+| 坐标读取 | `analysis/position/2026-10-21_causal_vs_linear/` | 实验 3.14：Qwen3-VL-8B（DeepStack 开与关）的生成、图像 KV 替换与 attention 剖面及 1280 张槽位网格，Qwen3.5 的五种 DeltaNet 门控模式与 7 种 full attention 阻断（H32/H64 网格各 192 张），CPU 上 5 种 mixer × 2 种布局 × 8 个随机种子的小模型 |
 | 坐标读取 | `analysis/position/2026-10-20_digit_failure/` | 实验 3.12：804 个输入、6909 行强制首位数字的析因记录（前两个数位的数字分布、第 8–32 层残差、逐组件与逐 head 的 direct logit attribution），72 张网格图像的贪心解码，264 个输入的 full-attention 层 attention |
+| 坐标读取 | `analysis/position/2026-10-21_digit_failure_r2/` | 实验 3.12 第二轮：96 对输入 × 31 种缓存编辑的来源替换、96 对的尾部扫描、128 个输入的分组 attention、386 个单位的第二位数字状态捕获与 10 种均值消融、178 张图像的首位读出 steering |
+| 坐标读取 | `analysis/position/2026-10-21_targeted_finetune/` | 实验 3.13：6 种 LoRA 条件（各 200 步，3200 条精确坐标样本）的 adapter，997 个留出测试项的坐标评测，2592 行 3.12 析因重跑，POPE、TextVQA、MMVP、GQA 与纯文本的通用能力评测 |
 | 坐标读取 | `analysis/position/2026-10-15_coordinate_value/` | 实验 3.6：密集单目标平移序列的逐层 residual、tokenizer 检查、坐标 probe 与几何、logit lens 与直接归因、数字强制、单位置 steering 与跨图像插值 |
 | 多层视觉特征注入 | `analysis/deepstack/2026-10-15_ablation_light/` | 实验 4.3（轻量版）：Qwen3-VL-8B/4B 的 DeepStack 消融（Full、Off、Blur、Mean、Off-1/2/3），T1/T2 颜色、T5/T6 定位与 RefCOCO |
-| 多层视觉特征注入 | `analysis/deepstack/2026-10-20_todo/` | 实验 4.4：Qwen3-VL-8B/4B 的 Blur（σ = 4、8、16 px）、Blank 与 Blank-flip 注入条件，POPE、TextVQA 与 BabyVision 的非坐标对照，270 张图像上 ViT、注入特征与 decoder 各层的逐 token ridge 读出（位置、高频能量、4 px 结构、粗颜色）；`represent/` 子目录约 6 GB |
+| 多层视觉特征注入 | `analysis/deepstack/2026-10-20_todo/` | 实验 4.4：Qwen3-VL-8B/4B 的 Blur（σ = 4、8、16 px）、Blank 与 Blank-flip 注入条件，POPE、TextVQA 与 BabyVision 的非坐标对照，270 张图像上 ViT、注入特征与 decoder 各层的逐 token ridge 读出（位置、高频能量、4 px 结构、粗颜色）；`represent/` 已删除（读出结果见 `analysis/representation.json`） |
+| 多层视觉特征注入 | `analysis/deepstack/2026-10-21_natural/` | 实验 4.5：Qwen3-VL-8B/4B 与 Qwen3.5-9B 在 TextVQA 小文字、DocVQA、GQA 小物体、CUB 与 MMVP 上约 2.6 万次作答，DeepStack 的 Full、Off、Mean、Blank、Meanpos、Blur2、Blur8 条件与证据区域替换 |
 | 视觉细节表征 | `analysis/representation/2026-10-16_sees_right/` | 实验 2.5e：2066 次直接作答与先推理后作答生成的 attention、probe 与行为三种意义的“看得准”检验，以及 value 复制与图像 KV 替换的因果检验 |
 | 视觉细节表征 | `analysis/representation/2026-10-20_odd_entity/` | 实验 2.6：2496 张图像（6×6 网格 std/swap 配对四元组、3×3 与 10×10 网格、混合模板多数、半区图像与 RefCOCO 物体裁剪），1680 次直接作答与 192 次先推理后作答，ViT、merger 与 decoder 的逐实体状态，184 张图像 × 22 个位置 × 8 类上下文替换 |
+| 视觉细节表征 | `analysis/representation/2026-10-21_search_asymmetry/` | 实验 2.7：2952 次直接作答生成（8 组特征对、9/36/100 个实体），864 张图像的 ViT MLP 激活与实体状态，两轮对称神经元编辑，171 张答对图像 × 41 个条件的 mixer 替换、DeltaNet 门控编辑与 attention 边 |
 | 视觉细节表征 | `analysis/representation/2026-10-16_high_norm/` | 实验 2.2：Qwen3.5-9B 与 Qwen3-VL-8B 的高范数 token 普查、来源干预、attention sink、内容与位置 probe 及任务消融 |
 | 视觉细节表征 | `analysis/representation/2026-10-15_patching_extension/` | 实验 2.5b/2.5c：生成阶段 patching（33 个 site、direct/direct1/via 路径分解、单答案 token 替换）与失败条件（修订 T3、10×10/20×20、色差 10/20、1.3 的 T5 失败图像）的替换记录与汇总 |
 | 行为诊断 | `analysis/behavior/2026-10-16_ordinal_mechanism/` | 实验 1.5：计数与位置的分离变体、直接作答与先推理后作答、逐层 probe 与控制任务、steering、误差起点模型拟合与行偏差统计 |
@@ -41,7 +48,9 @@
 | 行为诊断 | `analysis/behavior/2026-10-13_decomposition_pilot/` | 实验 1.3 的开发运行（每单元 3 张图），只用于确定规模与格式，不进入正式评分 |
 | 局部重读 | `analysis/reread/2026-10-16_reread_pilot/` | 实验 5.1 pilot：整图、整图放大、像素裁剪重编码与缓存窗口重读（多种 ViT 深度）在细节判别、原图定位、RefCOCO 小目标与 BabyVision 上的比较 |
 | 局部重读 | `analysis/reread/2026-10-20_cached_reread/` | 实验 5.2：原生 zoom 工具协议下像素裁剪与缓存重读（末层与第 9 层、1× 与 2× 缓存、position IDs 与逆序变体）在 TextVQA、GQA、MMVP、POPE、BabyVision 与合成网格上的准确率、时间、显存与 KV cache 比较 |
+| 局部重读 | `analysis/reread/2026-10-21_cache_only/` | 实验 5.3：只读原图单次 ViT 缓存的 15 种重读条件（末层与倒数第 2、3 层，平移合并、1×1 合并与双线性上采样，原图与新图 position IDs）在 TextVQA、GQA、MMVP、POPE 与合成任务上的精简协议、闭合调用与原生协议比较，及逐阶段计时、显存与 ViT FLOPs |
 | 行为诊断 | `analysis/behavior/2026-10-16_pe_scaling_t0/` | 实验 1.6：PE ×1/×2/×2.76 在 1.3 网格子集、BabyVision（Visual Tracking 与找不同）与 RefCOCO 上的比较，以及 T0 计数变化数据集（DATA_DIR 的 `stimuli_t0_count_variation_v1/`）的计数评测 |
+| 行为诊断 | `analysis/behavior/2026-10-21_cot_mechanism/` | 实验 1.7：4 类任务 × 64 张图像 × 3 种提示的生成与 16 个 thinking-on 回答，2143 条思维链的规则编码，截断与改写行号的忠实性检验，32 对行列、32 对坐标点与 16 对找异常图像上的缓存替换与 attention 探测 |
 | 共享刺激检查 | `analysis/common/stimuli_check/` | 全部模板与属性变化的样例图 |
 
 2026-10-13 起新增的研究问题使用 `analysis/deepstack/` 与 `analysis/reread/`；行为诊断、表征和位置问题的新实验继续使用上表对应的研究问题目录。各实验的计划目录名称见其设计文档的“运行与产物”一节，运行完成后补入上表。

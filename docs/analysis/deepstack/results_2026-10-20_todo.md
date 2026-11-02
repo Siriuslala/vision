@@ -370,6 +370,6 @@ ViT 第 9 层、$D_1$ 与 Full 的第 4 层能重建立方体边缘与碗的轮�
 
 - cases.jsonl、build.json、rep_images.jsonl：A、B 组样本与 C 组图像列表；images 与 refcoco_images 为指向 4.3 产物的符号链接，pope_images、textvqa_images、babyvision_images、rep_images 为本实验使用的图像；
 - runs/<模型>/<条件>.jsonl：原始回答（含首 token 的 $s$ 与 batch size），<条件>.scores.jsonl 为评分，<条件>.json 为运行配置；
-- represent/<模型>/：各读出位置的 token 表征（float16）与 meta.npz（token 索引、坐标与读出目标）；
+- represent/<模型>/：各读出位置的 token 表征（float16，约 6 GB）已于 2026-10-22 删除；读出结果保存在 analysis/representation.json，重新运行 analyze 时需设置 SKIP_REPRESENTATION=1，重新计算读出需先以 COMMAND=represent 重新提取；
 - checks/：修改生效核对与逐条解码核对；
 - analysis/：tables.md、summary.json、representation.json、重建数据与全部图；文档用图复制到 docs/analysis/deepstack/figures/todo/。

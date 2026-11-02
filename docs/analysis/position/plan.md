@@ -43,8 +43,13 @@
 | 3.9 | 坐标读出工具 | 以原生 function calling 调用 locate 工具，工具读取调用时 128 个 full-attention head 在目标描述末 token 上的 attention，经小型 MLP 对 visual tokens 打分并返回加权中心；在 RefCOCO 与通用合成场景上训练，在圆盘、T6、布局与环形等分布外合成任务上配对比较，并检验工具坐标写入上下文后行列答案的变化 | 已完成；[设计](design_readout_tool.md)、[结果](results_2026-10-16_readout_tool.md) |
 | 3.10 | 行列序号的统一机制 | 测量空白列与空白行之后 DeltaNet 门控 α 与计数 probe 的复位，按 head 类别（遗忘 head、行首 head、integrator）施加门控干预，比较直接作答与先推理后作答在 prefill 干预下的准确率，并交换行列的输出顺序 | 已完成；[设计](design_rowcol_mechanism.md)、[结果](results_2026-10-20_rowcol_mechanism.md) |
 | 3.11 | 坐标读出的信息流 | 对 128 个 full-attention head 逐一、逐层与留一 patching，按目标、同行、同列与背景等子集替换图像 KV，交换 11 种输出格式的坐标顺序，在 33 个位置追踪残差中的坐标，并重建 6 个位置的位置场 | 已完成；[设计](design_coordinate_flow.md)、[结果](results_2026-10-20_coordinate_flow.md) |
+| 3.11 第二轮 | 自然图像的坐标读出 | 以替换指代对象（what）与移动目标（where）两类配对在答案位置 patching 各 head 与 DeltaNet 输出，回归各 head 的 attention 峰值与目标框边缘，上下翻转图像检验显著部位，均值消融 head 集合，并以合成多形状图像对照 | 已完成；[结果](results_2026-10-21_coordinate_flow_natural.md) |
 | 3.12 | 坐标数字读出的失败机理 | 强制首位数字 k = 1..9 的析因实验，记录前两个数位位置的数字分布、各层残差与逐组件 direct logit attribution；在空白画布、RefCOCO、网格、计数与文本数值换算上对照，并以空白画布校准检验中心先验 | 已完成；[设计](design_digit_failure.md)、[结果](results_2026-10-20_digit_failure.md) |
+| 3.12 第二轮 | 坐标数字读出机理的完善 | 区分线性读出假设中由架构决定与需实证的部分，测量首位读出轨迹的几何；在第二位数字生成步上分别替换图像 KV、L20 H11 路径与 DeltaNet 短卷积状态；以相邻边际回归与 steering 检验第二位数字的来源；对中心先验神经元做均值消融 | 已完成；[结果](results_2026-10-21_digit_failure_r2.md) |
+| 3.13 | 基于机理的定向微调 | 以 3200 条精确坐标数据比较全部线性层与按机理选择的参数子集（MLP 28–32、第 25–32 层 MLP 与 DeltaNet、第 16–24 层 token mixer、同参数量的 MLP 10–14）的 LoRA，评测坐标与通用能力，并在训练后的模型上重跑 3.12 的测量 | 已完成；[设计](design_targeted_finetune.md)、[结果](results_2026-10-21_targeted_finetune.md) |
+| 3.14 | 因果掩码与线性注意力 | 在只有 causal full attention 的 Qwen3-VL（DeepStack 开与关）上重复图像 KV 子集替换与 attention 剖面，在 Qwen3.5 上施加五种 DeltaNet 门控干预与第 4–16 层 full attention 阻断，训练线性与 softmax 的小模型对照，并研究 32 pixels 网格的重新计数 | 已完成；[设计](design_causal_vs_linear.md)、[结果](results_2026-10-21_causal_vs_linear.md) |
 | 3.9 第二轮 | 坐标读出工具的改进与适用范围 | 模型调用时先填写粗略坐标，工具在答案槽位读取 attention 与内容特征；比较含与不含 attention 的读出器及其计算成本，在五级真实感合成场景与 RefCOCO 上界定适用范围，并以干预检验坐标与序号读出的关系 | 已完成；[设计](design_readout_tool.md)、[结果](results_2026-10-20_readout_tool_r2.md) |
+| 3.9 第三轮 | 精简坐标读出工具并与微调比较 | 逐步比较 3.11 的峰值读出与工具读出，测量读出精度随 head 数、层数与输入类型的变化（含 flash attention 兼容输入与边缘 head），分析自然图像上的失败类型，并在 3.13 的测试集上与定向微调比较 | 已完成；[结果](results_2026-10-21_readout_tool_r3.md) |
 
 旧计划中的两项待实施内容并入实验 3.5：
 

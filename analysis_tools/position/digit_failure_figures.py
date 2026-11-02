@@ -84,10 +84,19 @@ def fig_theory(A: dict, R: dict, figs: Path) -> None:
         for d in range(10):
             ax.plot(x, lg[:, d], color=DIGIT_CMAP(d / 9), lw=1.2)
         ax.plot(x, lg.max(1), color=INK, lw=0.8, ls=':', label='upper envelope (arg-max)')
+        if j == 0:
+            # Name the digit that owns each band of the envelope (red), at the band's midpoint.
+            env, win = lg.max(1), lg.argmax(1)
+            span = env.max() - env.min()
+            for d in np.unique(win):
+                idx = np.where(win == d)[0]
+                mid = idx[len(idx) // 2]
+                ax.text(x[mid], env[mid] + 0.05 * span, str(int(d)), color='red', fontsize=10, ha='center',
+                        va='bottom', fontweight='bold')
         ax.set_title(title, fontsize=9)
         ax.set_ylabel('logit' if j == 0 else '')
         if j == 0:
-            ax.legend(loc='upper left', fontsize=7)
+            ax.legend(loc='lower center', fontsize=7)
         ax = axes[1, j]
         ax.scatter(x, A[tk], s=2, color=GREY, label='required digit')
         ax.scatter(x, lg.argmax(1), s=2, c=lg.argmax(1), cmap=DIGIT_CMAP, vmin=0, vmax=9, label='readout arg-max')

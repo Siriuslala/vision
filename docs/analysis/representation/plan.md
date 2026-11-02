@@ -40,6 +40,7 @@
 | 2.4 | 特征反演与特征字典 | 将各层 visual tokens 重建为图像，直观显示细节随深度的保留与丢失；以稀疏自编码器探索未预设的特征 | 待实施 | [设计](design_visualization.md) |
 | 2.5 | Activation patching 与概念擦除 | 检验完整模型的回答是否依赖目标实例 token 的表征以及 2.3 识别的属性子空间 | 2.5a、2.5b、2.5c 已完成；2.5d 待实施 | [设计](design_causal.md)、[2.5a 10-13](results_2026-10-13_activation_patching.md)、[2.5b/2.5c 10-15](results_2026-10-15_patching_extension.md) |
 | 2.6 | 异常实体的比较机制 | 以 std/swap 配对分离属性编码与异常性编码，以上下文替换确定比较发生的位置、范围与光栅顺序 | 已完成 | [设计](design_odd_entity.md)、[10-20](results_2026-10-20_odd_entity.md) |
+| 2.7 | 视觉搜索不对称的机理 | 参照视觉搜索心理学范式构造多组特征对，测量 std/swap 准确率与实体数效应；定位 ViT MLP 中的特征出现检测神经元并做对称编辑；分别替换 decoder 各层 token mixer 输出、编辑 DeltaNet 门控，确定比较发生的层类型 | 已完成 | [设计](design_search_asymmetry.md)、[10-21](results_2026-10-21_search_asymmetry.md) |
 
 ## 5. 子实验之间的关系
 
