@@ -2,6 +2,8 @@
 
 实验日期：2026-10-21。本文属于[位置信息与坐标读取](plan.md)研究，执行[实验 3.14 设计](design_causal_vs_linear.md)，理论推导与符号定义见设计文档第 2 节。比较对象为 Qwen3.5-9B（24 个 Gated DeltaNet 层与 8 个 full attention 层，均为 causal）与 Qwen3-VL-8B-Instruct（36 个 full attention 层，causal，带 DeepStack）。两个模型均使用 bfloat16、SDPA、greedy decoding 与 thinking off，全部问题为只输出答案的 direct-answer 格式。上游结果为[坐标读出的信息流（3.11）](results_2026-10-20_coordinate_flow.md)、[行列序号机制（3.10）](results_2026-10-20_rowcol_mechanism.md)与[行列序号的机理（1.5）](../behavior/results_2026-10-16_ordinal_mechanism.md)。
 
+第二轮（[results_2026-11-03_causal_vs_linear_r2.md](results_2026-11-03_causal_vs_linear_r2.md)）以架构、机制与证据的顺序重写了本文第 1–4 节的论证，并加入读取 head 的 attention 对照；小模型、32 pixels 网格与序号行为的细节仍以本文第 5、6 节为准。
+
 ## 通俗讲述
 
 本节以叙述方式概括全文，细节与数值见第 1–6 节。

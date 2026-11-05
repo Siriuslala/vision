@@ -70,6 +70,7 @@ MIXER_NAMES = ('self_attn.q_proj', 'self_attn.k_proj', 'self_attn.v_proj', 'self
                'linear_attn.in_proj_a', 'linear_attn.out_proj')
 MLP_NAMES = ('mlp.gate_proj', 'mlp.up_proj', 'mlp.down_proj')
 DELTANET_IN = ('linear_attn.in_proj_qkv', 'linear_attn.in_proj_z', 'linear_attn.in_proj_b', 'linear_attn.in_proj_a')
+FA_NAMES = ('self_attn.q_proj', 'self_attn.k_proj', 'self_attn.v_proj', 'self_attn.o_proj')
 
 # Training conditions: which (layer, module) pairs receive a LoRA adapter.
 CONDITIONS = {
@@ -82,6 +83,34 @@ CONDITIONS = {
     # (b') 3.12 round 2: the second digit reads the q0 first-digit margin relayed by the DeltaNet short convolutions of
     # layers 25-31, and the centre prior is written by MLP 27-31: MLP + DeltaNet input projections + conv of layers 25-32.
     'late25_32': {'layers': tuple(range(25, 33)), 'modules': MLP_NAMES + DELTANET_IN + ('linear_attn.conv1d',)},
+    # ---- Round 2 (2026-11-03) controls: MLP vs token mixer, and frozen readout layers.
+    # Full-attention q/k/v/o only (the 8 full-attention layers; DeltaNet layers have no self_attn module).
+    'fa_attn': {'layers': tuple(range(1, 33)), 'modules': FA_NAMES},
+    # Gated DeltaNet projections only (in_proj_qkv/z/b/a and out_proj of the 24 DeltaNet layers).
+    'dn_proj': {'layers': tuple(range(1, 33)), 'modules': DELTANET_IN + ('linear_attn.out_proj',)},
+    # Every MLP, no token mixer.
+    'mlp_all': {'layers': tuple(range(1, 33)), 'modules': MLP_NAMES},
+    # Full attention + every MLP (all linear layers except the DeltaNet projections).
+    'fa_mlp': {'layers': tuple(range(1, 33)), 'modules': FA_NAMES + MLP_NAMES},
+    # All linear layers with the digit-writing MLPs of layers 28-32 frozen.
+    'all_but_mlp28_32': {'layers': tuple(range(1, 33)), 'modules': MIXER_NAMES + MLP_NAMES,
+                         'exclude': (((28, 29, 30, 31, 32), MLP_NAMES),)},
+    # All linear layers of layers 1-24: the whole readout stage (layers 25-32, 3.12 / 3.12 round 2) frozen.
+    'all_but_25_32': {'layers': tuple(range(1, 25)), 'modules': MIXER_NAMES + MLP_NAMES},
+    # Optimisation control for (b): same modules and rank, 10x learning rate.
+    'mlp28_32_lr1e3': {'layers': tuple(range(28, 33)), 'modules': MLP_NAMES, 'lr': 1e-3},
+    # ---- Round 2 scaled fine-tuning (more natural grounding data + self-distilled instruction data).
+    'scaled_all_linear': {'layers': tuple(range(1, 33)), 'modules': MIXER_NAMES + MLP_NAMES,
+                          'train_file': 'train_scaled.jsonl'},
+    'scaled_all_but_25_32': {'layers': tuple(range(1, 25)), 'modules': MIXER_NAMES + MLP_NAMES,
+                             'train_file': 'train_scaled.jsonl'},
+    # ---- Round 2 located variants (from the splice analysis: the fix lives in layers 1-4 at the image tokens).
+    'early1_4': {'layers': (1, 2, 3, 4), 'modules': MIXER_NAMES + MLP_NAMES},
+    # positions 'image': the update is applied only at image-token positions (text tokens see the base weights).
+    'early1_4_img': {'layers': (1, 2, 3, 4), 'modules': MIXER_NAMES + MLP_NAMES, 'positions': 'image'},
+    'all_linear_img': {'layers': tuple(range(1, 33)), 'modules': MIXER_NAMES + MLP_NAMES, 'positions': 'image'},
+    'scaled_early1_4_img': {'layers': (1, 2, 3, 4), 'modules': MIXER_NAMES + MLP_NAMES, 'positions': 'image',
+                            'train_file': 'train_scaled.jsonl'},
 }
 
 
@@ -89,10 +118,13 @@ def target_modules(layers: nn.ModuleList, condition: str) -> dict[str, nn.Module
     """'L{layer}.{name}' -> nn.Linear (or the DeltaNet nn.Conv1d) for one condition; modules absent in a layer
     type (e.g. DeltaNet projections in full-attention layers) are skipped."""
     spec = CONDITIONS[condition]
+    excluded = {(l, n) for ls, ns in spec.get('exclude', ()) for l in ls for n in ns}
     out = {}
     for l in spec['layers']:
         named = dict(layers[l - 1].named_modules())
         for name in spec['modules']:
+            if (l, name) in excluded:
+                continue
             mod = named.get(name)
             if isinstance(mod, (nn.Linear, nn.Conv1d)):
                 out[f'L{l}.{name}'] = mod
@@ -131,6 +163,12 @@ class LoRA(nn.Module):
         self._modules_ref = modules
         self._handles: list = []
         self._param: list = []
+        # Analysis-only controls (round 2). active: None = every adapted module applies its update, otherwise only
+        # the listed module names do. pos_mask: None = every position, otherwise a (B, L) tensor; the update is
+        # multiplied by it at each sequence position (0/1 restricts the update to selected tokens).
+        self.active: set[str] | None = None
+        self.pos_mask: torch.Tensor | None = None
+        self._extra_handles: list = []          # e.g. the image-mask pre-hook (removed by detach)
 
     @staticmethod
     def _key(name: str) -> str:
@@ -147,17 +185,25 @@ class LoRA(nn.Module):
                 continue
             A, B = self.A[self._key(n)], self.B[self._key(n)]
 
-            def hook(module, inputs, output, A=A, B=B):
+            def hook(module, inputs, output, A=A, B=B, n=n):
+                if self.active is not None and n not in self.active:
+                    return output
                 x = inputs[0]
                 delta = (x.float() @ A.t()) @ B.t()
+                if self.pos_mask is not None:
+                    m = self.pos_mask.to(delta.device, delta.dtype)
+                    if m.shape != delta.shape[:2]:
+                        raise ValueError(f'pos_mask {tuple(m.shape)} does not match the input {tuple(delta.shape[:2])}')
+                    delta = delta * m[..., None]
                 return output + (self.scale * delta).to(output.dtype)
             self._handles.append(self._modules_ref[n].register_forward_hook(hook))
 
     def detach(self) -> None:
         from torch.nn.utils import parametrize
-        for h in self._handles:
+        for h in self._handles + self._extra_handles:
             h.remove()
-        self._handles = []
+        self._handles, self._extra_handles = [], []
+        self.pos_mask = None
         for n in self._param:
             parametrize.remove_parametrizations(self._modules_ref[n], 'weight', leave_parametrized=False)
         self._param = []
@@ -207,14 +253,44 @@ class _AddDelta(nn.Module):
         return (w.float() + self.delta.to(w.device)).to(w.dtype)
 
 
-def load_adapter(layers: nn.ModuleList, path: Path, condition: str) -> LoRA:
-    """Recreate an adapter from a saved state and attach it."""
+def attach_image_mask(model: nn.Module, lora: LoRA, image_token_id: int):
+    """Restrict a LoRA's update to image-token positions whenever the multimodal model is called with input_ids.
+
+    A forward pre-hook on the multimodal backbone (model.model) sets lora.pos_mask = (input_ids == image_token_id);
+    during cached generation the decoding steps contain no image token, so they use the base weights. Calls with
+    inputs_embeds and 4-row MRoPE position ids (analysis passes) take the image positions from the position ids
+    (text tokens have equal t / h / w ids; the first image token, whose three ids coincide, is recognised by sharing
+    its temporal id with the next image token). Returns the hook handle."""
+    def pre(module, args, kwargs):
+        ids = kwargs.get('input_ids', args[0] if args else None)
+        if ids is not None:
+            lora.pos_mask = (ids == image_token_id).float()
+            return
+        # inputs_embeds calls (analysis passes): image tokens are the positions whose MRoPE (t, h, w) ids differ;
+        # text tokens have t = h = w. position_ids: (4, B, L) with row 0 the sequence index.
+        pos = kwargs.get('position_ids')
+        if pos is not None and pos.dim() == 3 and pos.shape[0] == 4:
+            m = ~((pos[1] == pos[2]) & (pos[2] == pos[3]))
+            # The first image token has t = h = w; it shares its temporal id with the image token after it.
+            first = torch.zeros_like(m)
+            first[:, :-1] = m[:, 1:] & (pos[1][:, :-1] == pos[1][:, 1:])
+            lora.pos_mask = (m | first).float()
+    handle = model.model.register_forward_pre_hook(pre, with_kwargs=True)
+    lora._extra_handles.append(handle)
+    return handle
+
+
+def load_adapter(layers: nn.ModuleList, path: Path, condition: str, model: nn.Module | None = None) -> LoRA:
+    """Recreate an adapter from a saved state and attach it. For image-position conditions the image mask hook is
+    attached when the multimodal `model` is given (otherwise the caller must set pos_mask)."""
     state = torch.load(path, map_location='cpu', weights_only=False)
     if state.get('condition') != condition:
         raise ValueError(f"Adapter {path} was trained for {state.get('condition')!r}, not {condition!r}")
     lora = LoRA(target_modules(layers, condition), state['rank'], state['alpha'])
     lora.load(state)
     lora.attach()
+    if CONDITIONS[condition].get('positions') == 'image' and model is not None:
+        attach_image_mask(model, lora, model.config.image_token_id)
     return lora
 
 
@@ -230,6 +306,8 @@ class Sample:
     truth:  {'canvas': [W, H], 'box': [x0, y0, x1, y1] pixels, 'center': [cx, cy] pixels, ...}.
     prompt: user text after the image.
     label:  value of the "label" field in the training answer (the target expression).
+    meta:   free-form; meta['answer_text'] (round-2 instruction samples) replaces the coordinate answer template,
+            and such samples use fmt 'text'.
     """
     id: str
     family: str
@@ -261,7 +339,9 @@ def encode_batch(processor, prompt_fn, samples: list[Sample], images: list) -> d
     """
     tok = processor.tokenizer
     prompts = [prompt_fn(s.prompt) for s in samples]
-    answers = [answer_text(s.fmt, s.truth, s.label) + '<|im_end|>' for s in samples]
+    # Instruction samples (round 2) carry their answer text in meta['answer_text']; grounding samples use the template.
+    answers = [(s.meta['answer_text'] if 'answer_text' in s.meta else answer_text(s.fmt, s.truth, s.label)) + '<|im_end|>'
+               for s in samples]
     tok.padding_side = 'right'
     batch = processor(text=[p + a for p, a in zip(prompts, answers)], images=images, padding=True, return_tensors='pt')
     for image, (_, h, w) in zip(images, batch['image_grid_thw'].tolist()):
@@ -282,7 +362,7 @@ def encode_batch(processor, prompt_fn, samples: list[Sample], images: list) -> d
             rows.append(b)
             idx.append(t - 1)
             tgt.append(full[t])
-            dig.append(full[t] in digit_ids)
+            dig.append(full[t] in digit_ids and 'answer_text' not in samples[b].meta)
     batch['label_row'] = torch.tensor(rows)
     batch['label_idx'] = torch.tensor(idx)
     batch['label_tok'] = torch.tensor(tgt)

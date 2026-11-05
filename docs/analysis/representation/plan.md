@@ -41,6 +41,7 @@
 | 2.5 | Activation patching 与概念擦除 | 检验完整模型的回答是否依赖目标实例 token 的表征以及 2.3 识别的属性子空间 | 2.5a、2.5b、2.5c 已完成；2.5d 待实施 | [设计](design_causal.md)、[2.5a 10-13](results_2026-10-13_activation_patching.md)、[2.5b/2.5c 10-15](results_2026-10-15_patching_extension.md) |
 | 2.6 | 异常实体的比较机制 | 以 std/swap 配对分离属性编码与异常性编码，以上下文替换确定比较发生的位置、范围与光栅顺序 | 已完成 | [设计](design_odd_entity.md)、[10-20](results_2026-10-20_odd_entity.md) |
 | 2.7 | 视觉搜索不对称的机理 | 参照视觉搜索心理学范式构造多组特征对，测量 std/swap 准确率与实体数效应；定位 ViT MLP 中的特征出现检测神经元并做对称编辑；分别替换 decoder 各层 token mixer 输出、编辑 DeltaNet 门控，确定比较发生的层类型 | 已完成 | [设计](design_search_asymmetry.md)、[10-21](results_2026-10-21_search_asymmetry.md) |
+| 2.7 第二轮 | 视觉搜索不对称的检测神经元与异常性方向 | 扩展像素包含与互斥的特征对，统计 ViT 中只对目标激活的神经元，估计跨特征共享的异常性方向并以 steering 与 head 消融检验其因果作用，以 3×12 与 12×3 布局区分行位置与之前实体数量 | 已完成 | [11-03 第二轮](results_2026-11-03_search_asymmetry_r2.md) |
 
 ## 5. 子实验之间的关系
 

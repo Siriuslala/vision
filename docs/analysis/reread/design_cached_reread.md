@@ -1,4 +1,143 @@
-# 实验 5.2：缓存重读方法设计
+# 缓存重读方法设计（实验 5.2–5.4）
+
+本文档属于[局部重读](plan.md)问题，是方向二（AGENTS.md 第 2.2 节）的方法设计。第 0 节给出缓存重读的完整算法规范，并逐步与模型原生的裁剪重编码工具对比；第 1–6 节为实验 5.2 的设计。实验 5.3（[免重编码的缓存重读](results_2026-10-21_cache_only.md)）与实验 5.4（[两项敏捷实验](results_2026-11-03_reread_pilots.md)）沿用第 0 节的流程，只改变第 5 步的读取方式。
+
+## 0. 缓存重读的完整算法
+
+### 0.1 定义
+
+缓存重读是一个由冻结的 Qwen3.5-9B 驱动的工具调用循环，包含以下三个要点：
+
+1. **模型只输出一个坐标框。** 模型使用 Qwen3.5 原生的工具调用格式（chat template 中的 `<tool_call>` 协议）调用一个名为 `image_zoom_in_tool` 的工具，参数 `bbox_2d` 为 0–1000 归一化坐标下的矩形框。模型不输出任何特征，也不需要新增 special token 或训练。
+2. **系统在缓存上取窗口。** 工具的执行者是推理系统。系统把坐标框换算为 visual token 网格上的窗口，从首次 ViT 前向时保存的特征缓存中取出该窗口对应的特征，经冻结的 patch merger 得到一段 LLM 输入 embedding。这一步不对图像像素做任何操作，也不再运行 ViT。
+3. **窗口特征作为新的一轮输入追加到序列末尾。** 系统把这段 embedding 放入一条 tool response 消息中，作为新的对话轮次追加在已生成的序列之后；已有 token 及其 KV cache 保持不变，系统只对新追加的 token 做增量 prefill，之后模型继续解码，可以直接作答，也可以再次调用工具。
+
+原生的裁剪重编码工具与缓存重读共享除第 5、6 步以外的全部步骤：它在第 5 步把窗口对应的像素裁下、放大后重新运行一次完整的 ViT，并在第 6 步把结果当作一张新图像编排 position IDs。
+
+![缓存重读与裁剪重编码的流程](figures/reread_pilots/pipeline.png)
+
+上图为示意图，不含模型数据。灰色框为两种工具共享的步骤 S0–S4 与 S7，蓝色框为缓存重读的 S5、S6，橙色框为裁剪重编码的 S5、S6；S7 指回 S3 的箭头表示模型可以再次调用工具（实验 5.2 的原生协议最多 3 次调用）。
+
+### 0.2 符号
+
+| 符号 | 形状 | 含义 |
+| --- | --- | --- |
+| $I$ | $H_{\mathrm{px}} \times W_{\mathrm{px}} \times 3$ | 输入图像，边长缩放为 32 pixels 的整数倍，面积不超过输入预算 |
+| $H, W$ | 标量 | merged token 网格的行数与列数，$H = H_{\mathrm{px}}/32$，$W = W_{\mathrm{px}}/32$ |
+| $N$ | 标量 | ViT patch 数，$N = 4HW$，每个 patch 为 16×16 pixels |
+| $X^{(\ell)}$ | $2H \times 2W \times 1152$ | ViT 第 $\ell$ 个 block 输出的 patch 状态，$\ell = 1, \dots, 27$；$X^{(0)}$ 为 patch embedding 与绝对位置编码之和 |
+| $M$ | 映射 | patch merger：把一个 2×2 patch 组的 4 个 1152 维状态经 LayerNorm 后拼接为 4608 维，再经两层 MLP 投影到 $d = 4096$ 维 |
+| $V$ | $HW \times d$ | 首次输入 LLM 的 visual tokens，$V = M(X^{(27)})$，按光栅顺序排列 |
+| $\mathcal{C}$ | 集合 | 特征缓存，至少包含 $X^{(27)}$（等价地包含 $V$） |
+| $b$ | 4 个标量 | 模型在工具调用中输出的坐标框 $(x_1, y_1, x_2, y_2) \in [0, 1000]^4$，相对于模型看到的整图 |
+| $w$ | 4 个整数 | token 网格上的窗口 $(r_0, c_0, h, w)$：起始行、起始列、行数、列数 |
+| $K$ | 标量 | 窗口的 merged token 数，$K = hw$ |
+| $R$ | $K' \times d$ | 工具返回的窗口 embedding，$K'$ 为其 token 数（标准读法 $K' = K$） |
+| $f$ | 标量 | $V$ 的第一个 token 在 MRoPE 位置轴上的起点 |
+| $t_2$ | 标量 | 工具返回段的第一个 token 在位置轴上的起点 |
+| $\boldsymbol{p}$ | 3 个实数 | 一个 token 的 MRoPE position IDs $(p^t, p^h, p^w)$ |
+
+### 0.3 算法
+
+**S0 预处理。** 把 $I$ 按保持宽高比的方式缩放，使两边都是 32 pixels 的整数倍且面积不超过预算（自然图像实验为 $512^2$ pixels）。processor 把图像切成 $N = 4HW$ 个 16×16 的 patch；Qwen3.5 的视频式 patch 化把同一帧复制为 2 帧，因此每个 patch 是 $2 \times 16 \times 16 \times 3 = 1536$ 个像素值。patch 按 2×2 merge group 连续排列，便于 merger 直接分组。
+
+**S1 一次 ViT 前向并缓存。** ViT 的计算为
+
+$$
+X^{(0)} = \mathrm{PatchEmbed}(I) + E_{\mathrm{pos}}, \qquad X^{(\ell)} = \mathrm{Block}_\ell\left(X^{(\ell-1)}\right),\ \ell = 1, \dots, 27, \qquad V = M\left(X^{(27)}\right).
+$$
+
+其中 $\mathrm{PatchEmbed}$ 是 1536 维到 1152 维的线性映射（以 Conv3d 实现），$E_{\mathrm{pos}}$ 是双线性插值到当前网格的可学习绝对位置编码，每个 $\mathrm{Block}_\ell$ 是一层带二维 RoPE 的全局 self-attention 与 MLP。同一次前向中，forward hook 把 $X^{(27)}$（若读取方式需要，再加上其他 block 的输出）写入缓存 $\mathcal{C}$。hook 只保存已经算出的张量，不增加计算；$X^{(27)}$ 每个 patch 占 $1152 \times 2$ bytes（bfloat16），一张 $512^2$ pixels 的图像约 2.4 MB。
+
+**S2 构造 prompt 并 prefill。** 序列按 chat template 组织为三段：system 消息声明工具 `image_zoom_in_tool` 的 JSON schema 与调用格式说明；user 消息为 `<|vision_start|>`、$HW$ 个 `<|image_pad|>` 占位符、`<|vision_end|>`、问题文本与“先调用一次工具再作答”的要求；最后是 assistant 轮次的起始标记与空的 thinking 块（thinking off）。占位符的输入 embedding 被替换为 $V$ 的各行。第 $r$ 行、第 $c$ 列 visual token 的 position IDs 为 $(f, f + r, f + c)$，文本 token 的三个分量相同并逐个递增。prefill 之后，8 个 gated full attention 层保存逐 token 的 KV cache，24 个 Gated DeltaNet 层保存与序列长度无关的递推状态。
+
+**S3 模型解码工具调用。** 模型在 assistant 轮次中生成
+
+`<tool_call>` `<function=image_zoom_in_tool>` `<parameter=bbox_2d>` `[x1, y1, x2, y2]` `</parameter>` `</function>` `</tool_call>`
+
+其中 `<tool_call>` 与 `</tool_call>` 是 Qwen3.5 词表中的单个 special token（id 248058 与 248059），函数名与参数名标签由普通文本 token 组成。系统以 `</tool_call>` 作为停止符，用正则表达式解析出 $b$。实验中使用过两种协议：原生协议（5.2）允许模型在调用前写推理文本；精简协议（5.3、5.4）把 assistant 轮次预填到 `[` 为止，模型只续写 4 个坐标，解码到 `]` 后由系统补上固定的闭合标签，以排除推理文本对时间的影响。
+
+**S4 坐标框换算为窗口。** 行方向按
+
+$$
+a = \left\lfloor \frac{y_1 H}{1000} \right\rfloor, \qquad e = \max\left(\left\lceil \frac{y_2 H}{1000} \right\rceil,\ a + 1\right), \qquad h = \min\left(\max(e - a,\ 4),\ H\right),
+$$
+
+$$
+r_0 = \min\left(\max\left(\operatorname{round}\left(\frac{a + e - h}{2}\right),\ 0\right),\ H - h\right)
+$$
+
+计算，列方向以 $x_1, x_2, W$ 同理得到 $c_0, w$。也就是说，坐标框先向外取整到 token 边界；若某边不足 4 个 token（128 pixels），则以框中心为中心对称扩展到 4 个 token，并在图像边界处向内平移。窗口覆盖原图的 $K = hw$ 个 merged token，即 $2h \times 2w$ 个 patch。
+
+**S5 在缓存上读取窗口。** 标准读法（实验中的 c27）直接取出窗口内的 visual tokens：
+
+$$
+R = \left[\, M\left(X^{(27)}_{2(r_0+i):2(r_0+i)+2,\ 2(c_0+j):2(c_0+j)+2}\right) \,\right]_{0 \le i < h,\ 0 \le j < w} = \left[\, V_{(r_0+i)W + c_0 + j} \,\right]_{0 \le i < h,\ 0 \le j < w}.
+$$
+
+方括号按行优先顺序排列，$K' = K$。由于 $V$ 已经是 $M(X^{(27)})$ 的结果，这一读法只是一次索引，不需要任何矩阵乘法。实验 5.3 的其余读法在同一窗口的 $X^{(27)}$ 上以不同分组重新调用 $M$（例如步长为 1 的重叠 2×2 分组，$K' = (2h-1)(2w-1)$），实验 5.4 的学习读法先用一个约 900 万参数的卷积模块把 $X^{(27)}$ 映射为 2 倍密度的 patch 网格再调用 $M$（$K' = 4K$），两者都只在缓存上计算，不运行 ViT。
+
+**S6 编排 position IDs。** 窗口段的时间分量取它在序列中的起点 $t_2$，行、列分量沿用窗口在原图中的位置（记为 orig）：
+
+$$
+\boldsymbol{p}(i, j) = \left(t_2,\ f + r_0 + s\,i,\ f + c_0 + s\,j\right),
+$$
+
+其中 $s$ 为相邻返回 token 在原图中的间距（以 merged token 为单位），标准读法 $s = 1$，$4K$ 个 token 的读法 $s = 1/2$。这一编排使窗口 token 与原图同一位置的 visual token 在行、列频段上对齐。实验 5.3 显示，改用把窗口视为新图像的编排（$p^h = t_2 + i$，$p^w = t_2 + j$）对准确率没有可测影响（差值 0.000）。段之后的文本从 $t_2 + \max(\text{段的行数}, \text{段的列数})$ 继续编号，与 Qwen3.5 对图像之后文本的默认规则一致。
+
+**S7 作为新的一轮追加并继续解码。** 系统在已生成的调用之后追加以下 token：
+
+1. `<|im_end|>`、换行、`<|im_start|>user`、换行、`<tool_response>`、换行；
+2. `<|vision_start|>`、$K'$ 个 `<|image_pad|>` 占位符（embedding 替换为 $R$）、`<|vision_end|>`；
+3. 一句文本，给出窗口在原图中的 0–1000 坐标并重述答案格式，例如“Zoomed view of region [x1, y1, x2, y2] of the image …”；
+4. 换行、`</tool_response>`、`<|im_end|>`、换行、`<|im_start|>assistant`、换行与空的 thinking 块（精简协议再预填“Final answer:”）。
+
+这段 token 共约 $K' + 87$ 个。模型在已有 KV cache 上只对它们做增量 prefill，然后继续 greedy 解码。若模型再次输出工具调用，则回到 S3；缓存 $\mathcal{C}$ 与窗口无关，任意多次调用都只需重复 S4–S7。
+
+### 0.4 与裁剪重编码的逐步对比
+
+| 步骤 | 缓存重读 | 裁剪重编码（Qwen 原生 zoom 工具） |
+| --- | --- | --- |
+| S0 预处理 | 相同 | 相同 |
+| S1 ViT | 整图一次前向，hook 保存 $X^{(27)}$ | 整图一次前向，不需要保存中间状态 |
+| S2 prefill | 相同 | 相同 |
+| S3 工具调用 | 相同的工具名、参数与 special token | 相同 |
+| S4 窗口 | 相同的换算 | 相同的换算，窗口换成像素框 $[32c_0, 32r_0, 32(c_0+w), 32(r_0+h)]$ |
+| S5 读取 | 在缓存上索引（或调用 merger），不运行 ViT | 裁下像素，边长以 bicubic 放大 $k$ 倍，对 $4k^2K$ 个新 patch 运行完整的 27 层 ViT 与 merger，得到 $k^2K$ 个 token；放大后面积上限为 $1280^2$ pixels |
+| S6 position IDs | 原图行列位置（orig） | 新图像的默认编排（new） |
+| S7 追加 | 相同的消息格式与增量 prefill | 相同 |
+| 窗口内的视觉上下文 | 窗口 token 在整图上下文中编码，携带原图位置 | 窗口单独编码，ViT 看不到窗口外的内容 |
+
+两者唯一的信息差别在 S5：裁剪重编码让 ViT 以 $k$ 倍密度的 patch 网格重新编码同一批像素，缓存重读只能复用 1 倍编码的结果。实验 5.3 据此得到缓存重读的准确率上限：$k = 1$ 时两者相同，$k = 2$ 时裁剪更准确，差距集中在小窗口的文字题上。
+
+### 0.5 每步的计算量与开销
+
+ViT 对 $n$ 个 patch 的前向计算量（每次乘加计 2 FLOPs，忽略 LayerNorm 与 RoPE）为
+
+$$
+F_{\mathrm{ViT}}(n) = 2n \cdot 1536 \cdot 1152 + 27\left[\, 2n\left(4 \cdot 1152^2 + 2 \cdot 1152 \cdot 4304\right) + 4n^2 \cdot 1152 \,\right] + F_M\!\left(\frac{n}{4}\right),
+$$
+
+其中第一项为 patch embedding，方括号内依次为每个 block 的 QKV 与输出投影、MLP（中间维 4304）和全局 attention 的打分与加权求和，$F_M(m) = 2m\,(4608^2 + 4608 \cdot 4096) \approx 0.080$ GFLOPs 乘以 $m$ 为 merger 产生 $m$ 个 token 的计算量。attention 项随 $n^2$ 增长，因此大图的 ViT 代价增长快于线性。LLM 侧每处理一个 token 约需 $2 \times 7.16 \times 10^9 \approx 14.3$ GFLOPs（7.16B 为不含词表矩阵的 decoder 参数量），解码时每个新 token 都要读取全部权重，速度受显存带宽限制。
+
+下表以 $512^2$ pixels 的自然图像（$H = W = 16$，$N = 1024$）和 $8 \times 8$ 的窗口（$K = 64$）为例；时间取自实验 5.3 闭合调用协议在单张 A800 上对四个自然数据集各 20 题的逐段计时中位数（`timing2/timing.jsonl`）。
+
+| 步骤 | 计算 | 计算量（示例） | 实测时间 | 显存与缓存 |
+| --- | --- | --- | --- | --- |
+| S1 ViT | $F_{\mathrm{ViT}}(4HW)$ | 997 GFLOPs | 27–32 ms | 缓存 $X^{(27)}$ 2.4 MB |
+| S2 prefill | 约 $461 + HW$ 个 token | 约 10 TFLOPs | 与 S3 合计 0.66 s | KV cache 每 token 32 KiB |
+| S3 调用解码 | 约 20 个 token 的逐 token 解码 | 每 token 14.3 GFLOPs | 见上 | 同上 |
+| S4 窗口换算 | 常数次算术 | 可忽略 | 可忽略 | 无 |
+| S5 缓存重读（c27） | 索引 $K$ 行 | 0 | 约 1 ms | 无新增 |
+| S5 缓存重读（4K 读法） | $F_M(4K)$ | 20 GFLOPs | 约 1 ms | 无新增 |
+| S5 裁剪重编码 $k = 1$ | $F_{\mathrm{ViT}}(4K)$ | 225 GFLOPs | 21 ms | ViT 激活 |
+| S5 裁剪重编码 $k = 2$ | $F_{\mathrm{ViT}}(16K)$ | 997 GFLOPs | 32 ms | ViT 激活 |
+| S6 position IDs | $O(K')$ | 可忽略 | 可忽略 | 无 |
+| S7 增量 prefill 与作答 | 约 $K' + 87$ 个 token 加答案解码 | $(K' + 87) \times 14.3$ GFLOPs | 0.19–0.21 s | KV cache 增加 $(K' + 87) \times 32$ KiB |
+
+由此可见，在 $512^2$ pixels 的输入下，缓存重读省下的只是 S5 中 20–30 ms 的 ViT 计算，而端到端时间（中位数 0.88–0.93 s）主要由 S2、S3 的 prefill 与逐 token 解码构成。缓存重读的效率优势只有在 ViT 代价占比更高的场景（高分辨率输入、多次重读）才会体现，这正是实验 5.4 选项 2 检验的问题。
+
+## 实验 5.2 的设计
 
 本实验属于[局部重读](plan.md)问题，是方向二（AGENTS.md 第 2.2 节）的第一个可运行原型。实验 5.1 以 oracle 窗口比较了像素裁剪重编码与缓存窗口重读，本实验把缓存重读放进 Qwen3.5-9B 原生的工具调用协议中：模型自己用工具调用给出窗口，工具返回整图编码缓存中该窗口的视觉特征，并在相同协议下与模型原生的裁剪放大工具比较准确率、时间、显存与 KV cache 开销。
 

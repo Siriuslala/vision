@@ -194,7 +194,7 @@ def attach(rt: qr.Runtime, args) -> tf.LoRA | None:
     if args.condition == 'base':
         return None
     path = Path(args.output) / 'adapters' / f'{args.condition}.pt'
-    return tf.load_adapter(rt.layers, path, args.condition)
+    return tf.load_adapter(rt.layers, path, args.condition, rt.model)
 
 
 def cond_dir(out: Path, condition: str) -> Path:
@@ -214,17 +214,20 @@ def stage_train(rt: qr.Runtime, out: Path, args) -> None:
     if apath.exists():
         print(f'{apath} exists; skipping training', flush=True)
         return
-    samples = tf.read_samples(out / 'train.jsonl')
+    samples = tf.read_samples(out / tf.CONDITIONS[cond].get('train_file', 'train.jsonl'))
+    base_lr = tf.CONDITIONS[cond].get('lr', args.lr)
     torch.manual_seed(SEED)
     rank = tf.CONDITIONS[cond].get('rank', args.rank)
     alpha = args.alpha * rank / args.rank            # keep the update scale alpha / r fixed across ranks
     lora = tf.LoRA(tf.target_modules(rt.layers, cond), rank, alpha)
     lora.attach()
     model = rt.model
+    if tf.CONDITIONS[cond].get('positions') == 'image':
+        tf.attach_image_mask(model, lora, model.config.image_token_id)
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
     model.train()
     model.config.use_cache = False
-    opt = torch.optim.AdamW(lora.parameters(), lr=args.lr, weight_decay=0.0, betas=(0.9, 0.999))
+    opt = torch.optim.AdamW(lora.parameters(), lr=base_lr, weight_decay=0.0, betas=(0.9, 0.999))
     rng = np.random.default_rng(SEED)
     order = np.concatenate([rng.permutation(len(samples)) for _ in range(args.epochs)])
     n_steps = len(order) // args.step_samples
@@ -232,8 +235,8 @@ def stage_train(rt: qr.Runtime, out: Path, args) -> None:
 
     def lr_at(s):
         if s < warm:
-            return args.lr * (s + 1) / warm
-        return args.lr * 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, n_steps - warm)))
+            return base_lr * (s + 1) / warm
+        return base_lr * 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, n_steps - warm)))
 
     prompt_fn = lambda text: qr.prompt_text(rt, 1, text)
     log = out / 'adapters' / f'{cond}_log.jsonl'
@@ -274,7 +277,7 @@ def stage_train(rt: qr.Runtime, out: Path, args) -> None:
         if step % 10 == 0:
             print(json.dumps(row), flush=True)
     state = lora.state()
-    state.update({'condition': cond, 'lr': args.lr, 'epochs': args.epochs, 'step_samples': args.step_samples,
+    state.update({'condition': cond, 'lr': base_lr, 'epochs': args.epochs, 'step_samples': args.step_samples,
                   'n_steps': n_steps, 'n_params': lora.n_params(), 'delta_norms': lora.delta_norms(),
                   'train_seconds': time.time() - t0, 'runtime': qr.describe(rt)})
     torch.save(state, apath)

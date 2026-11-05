@@ -165,8 +165,8 @@ def fig_margin(R: dict, A: dict, figs: Path) -> None:
         ax.set_xlabel('true in-bin offset (second-digit units)')
         ax = axes[1, j]
         sc = ax.scatter(d, E, c=o, cmap='viridis', s=10, vmin=0, vmax=10)
-        ax.set_title(f"R² margins {m['r2_margins']:.2f} (both {m['r2_both']:.2f})", fontsize=9)
-        ax.set_xlabel('q0 margin log P(k+1) − log P(k−1) (nats)')
+        ax.set_title(f"R² on (Δ⁺, Δ⁻) {m['r2_margins']:.2f} (both {m['r2_both']:.2f})", fontsize=9)
+        ax.set_xlabel('first-digit adjacent difference m = ℓ0(k+1) − ℓ0(k−1) at q0 (nats)')
     axes[0, 0].set_ylabel('expected second digit at q1')
     axes[1, 0].set_ylabel('expected second digit at q1')
     fig.colorbar(sc, ax=axes[:, -1].tolist(), fraction=0.04, label='true in-bin offset')
@@ -178,12 +178,12 @@ def fig_steer(R: dict, A: dict, figs: Path) -> None:
         return
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
     for ax, l in zip(axes, (24, 28)):
-        for key, col, lab in ((f'margin@{l}', C[0], 'margin direction'), (f'random@{l}', GREY, 'random direction')):
+        for key, col, lab in ((f'margin@{l}', C[0], 'adjacent-difference direction'), (f'random@{l}', GREY, 'random direction')):
             dd, dE = A[f'steer_all_{key}_dd'], A[f'steer_all_{key}_dE']
             ax.scatter(dd, dE, s=6, color=col, alpha=0.5, label=f"{lab} (slope {R['steer']['all']['slopes'][key]['slope']:.2f})")
         ax.axhline(0, color=GREY, lw=0.5)
         ax.axvline(0, color=GREY, lw=0.5)
-        ax.set_xlabel('change of q0 margin log P(k+1) − log P(k−1) (nats)')
+        ax.set_xlabel('change of first-digit adjacent difference m at q0 (nats)')
         ax.set_title(f'steering the q0 residual at layer {l}', fontsize=9)
         ax.legend(fontsize=7)
     axes[0].set_ylabel('change of expected second digit at q1')
