@@ -242,7 +242,23 @@ ViT 第 27 个 block 的输出中 5 个维度占全部方差的 97%（massive ac
 2. **双向重读的检验。** 若比较只看之前的实体，则把图像按相反光栅顺序（旋转 180°）再输入一次，或在推理时允许模型以第 2.2 节方向二的窗口方式重新读取后半部分，应能提高靠前目标的 swap 准确率。这一检验与问题 5 的局部重读直接相关，且不依赖任何任务特定结构。
 3. **ViT 中比较的头级定位。** 在 ViT 第 3–12 个 block 中逐头消融，寻找把全图属性分布写入实体 token 的 attention 头，并检验它们是否同样负责 BabyVision 原题中的异常检测。
 
-## 8. 运行与产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验不涉及训练，无 checkpoint。下表中的 OE 目录指 `$WORK_DIR/analysis/representation/2026-10-20_odd_entity`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.1 节刺激表与输入示例图（`figures/odd_entity/examples.png`） | OE 目录下 `items.jsonl`、`images/`、`build_config.json` | `scripts/analysis/representation/odd_entity.sh`（STAGE=build；图由 STAGE=analyze 生成） |
+| 第 2.3 节规模、耗时与批量生成一致性检查 | OE 目录下 `run_behave.json`、`run_capture.json`、`run_patch.json`、`spotcheck.json`、`summary.json` 的 `spotcheck` 字段 | 同上（STAGE=behave / spotcheck / capture / patch） |
+| 主要结果 1、第 3.1 节行为表与 `behaviour.png` | OE 目录下 `results_behave.jsonl`；`summary.json` 的 `behaviour.table`、`behaviour.std_vs_swap` 字段 | 同上（STAGE=behave，analyze） |
+| 主要结果 2、第 3.2 节余弦与 top-1 表，`oddness_vs_feature.png`、`oddness_maps_{gap2,color20,red}.png` | `summary.json` 的 `representation` 字段；实体状态原始激活（OE 目录下 `capture/`）中间激活已清理，可由 `scripts/analysis/representation/odd_entity.sh`（STAGE=capture）重新生成 | 同上（STAGE=capture，analyze） |
+| 第 3.3 节半半分割表与 `boundary_maps.png` | `summary.json` 的 `boundary` 字段；对应的 `capture/boundary_*.npz` 中间激活已清理，可由同一脚本重新生成 | 同上（STAGE=capture，analyze） |
+| 主要结果 3、5，第 3.4 节上下文替换表与 `patch_curves.png` | OE 目录下 `patch.jsonl`；`summary.json` 的 `patch` 字段 | 同上（STAGE=patch，analyze） |
+| 主要结果 4、第 3.5 节光栅顺序替换表，`raster_patch.png` 与 `raster_margin.png` | `patch.jsonl`；`summary.json` 的 `raster`、`behaviour.by_target_row` 字段 | 同上（STAGE=patch，analyze） |
+| 主要结果 6、第 3.6 节直接回答与推理对照表 | `results_behave.jsonl`（mode 为 direct 与 think）；`summary.json` 的 `behaviour.think_coding` 字段 | 同上（STAGE=behave，analyze） |
+| 第 3.7 节文本侧多数指数与 `text_majority.png` | `summary.json` 的 `text` 字段 | 同上（STAGE=capture，analyze） |
+
+### 代码与运行记录
 
 - 入口：`scripts/analysis/representation/odd_entity.sh`（阶段 build、behave、spotcheck、capture、patch、analyze）。
 - 代码：`analysis_tools/representation/odd_entity.py`、`odd_entity_run.py`、`odd_entity_analysis.py`；测试为 `tests/analysis/representation/test_odd_entity.py`。

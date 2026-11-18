@@ -223,6 +223,25 @@ $$
 5. **每层 head 级 DLA 未使用 LoRA 更新后的 `o_proj`。** hook 式 LoRA 不修改 `o_proj.weight`，因此 (a)、(c) 的逐 head 归因只含原权重；逐模块（注意力模块与 MLP）的归因基于模块输出，是精确的。
 6. **新编码的形式没有刻画。** 第 3.5 节只表明读取之前的编码改变而信息量不减，没有说明它变成了什么（例如是否出现周期分量）。
 
-## 6. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。下表中 `<run>` 指 `$WORK_DIR/analysis/position/2026-10-21_targeted_finetune`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 主要结论 1 与表 1 所用的最优条件 (a) all_linear 的 LoRA adapter | `<run>/adapters/all_linear.pt`（LoRA 矩阵，非完整 checkpoint），训练日志 `<run>/adapters/all_linear_log.jsonl` | `scripts/analysis/position/targeted_finetune.sh`（`CONDITION=all_linear STAGES=train`） |
+| 表 2 其余条件 (b)、(b-r64)、(b′)、(c)、(d) 的 adapter | `<run>/adapters/{mlp28_32,mlp28_32_r64,late25_32,mixer16_24,mlp10_14}.pt` 及同名 `_log.jsonl` | 同上（`CONDITION=<条件> STAGES=train`） |
+| 第 2.2 节训练条件、可训练参数量与数字 token 交叉熵；图 8 | `<run>/results.json`（`training` 字段），`<run>/adapters/*_log.jsonl`；图 `figures/targeted_finetune/training.png` | 同上（`STAGES=analysis`） |
+| 图 0 输入示例；训练与测试样本 | `<run>/train.jsonl`、`<run>/test.jsonl`、`<run>/images/`；图 `figures/targeted_finetune/inputs.png` | 同上（`STAGES=prepare`） |
+| 表 1、表 2 坐标指标；图 1–3 | `<run>/eval/<条件>/coord.jsonl`（生成答案），`<run>/results.json`（`coord` 字段），`<run>/analysis.npz`；图 `disc_curves.png`、`coord_metrics.png`、`grid10.png` | 同上（`STAGES=coord` 与 `STAGES=analysis`） |
+| 第 2.3 节批量解码抽查（14/20 等） | `<run>/eval/<条件>/spotcheck.json` | 同上（`STAGES=spotcheck`） |
+| 第 3.3 节通用能力表与图 4 | `<run>/eval/<条件>/general.jsonl`、`<run>/eval/<条件>/text.jsonl`，`<run>/results.json`（`general` 字段）；图 `general.png` | 同上（`STAGES=general` 与 `STAGES=analysis`） |
+| 第 3.4 节机理表（第二位增益、margin / 偏移 $R^2$ 等）与图 5 | `<run>/eval/<条件>/fact/factorial/{rows.jsonl,units.json}`，`<run>/results.json`（`mechanism` 字段）；图 `mechanism.png` | 同上（`STAGES=factorial` 与 `STAGES=analysis`） |
+| 第 3.5 节 DLA 变化与 residual 表示变化（图 6、7） | `<run>/results.json`（`change` 字段），`<run>/analysis.npz`；residual 分片位于 `$DATA_DIR/scratch/analysis/position/2026-10-21_targeted_finetune/features/<条件>/`（由 `<run>/eval/<条件>/fact/features` 链接）；图 `dla_change.png`、`representation_change.png` | 同上（`STAGES=factorial` 与 `STAGES=analysis`） |
+| 运行参数与代码摘要 | `<run>/experiment.json`、`<run>/prepare.json`、`<run>/run_<条件>.log` | 同上 |
+
+图的路径均相对于 `docs/analysis/position/`。
+
+### 代码与运行记录
 
 产物位于 WORK_DIR 的 `analysis/position/2026-10-21_targeted_finetune/`：`train.jsonl` 与 `test.jsonl`（样本与真值）、`images/`、`adapters/`（各条件的 LoRA 矩阵、短卷积增量与训练日志，不含完整 checkpoint）、`eval/<条件>/`（`coord.jsonl` 坐标答案、`general.jsonl` 与 `text.jsonl` 通用能力、`spotcheck.json` 解码抽查、`fact/` 3.12 析因的数字分布与 DLA，residual 分片链接到 DATA_DIR）、`results.json` 与 `analysis.npz`（全部统计）、`experiment.json`（运行参数与代码摘要）。程序为 `analysis_tools/position/targeted_finetune*.py`，入口为 `scripts/analysis/position/targeted_finetune.sh`，测试为 `tests/analysis/position/test_targeted_finetune.py`。

@@ -243,15 +243,7 @@ $S$ 衡量表达改变时 attention 从物体 A 转向物体 B 的程度；只�
 - 翻转改变了图像的自然统计，模型命中率下降到 0.87；翻转结果只在翻转前后都命中的人物图像上统计。
 - 度量为 teacher-forced 首位数字 logit 差，与第一轮相同。
 
-## 6. 运行与产物
-
-- 入口：`scripts/analysis/position/coordinate_flow_natural.sh`（`STAGE=cases|gpu|analyze|figures`，参数集中在脚本顶部）。
-- 代码：`analysis_tools/position/coordinate_flow_natural.py`（case 构建与 GPU 阶段 gen、spotcheck、patch、means、ablate、flip）、`coordinate_flow_natural_analysis.py`（CPU 分析，输出 `summary.json` 与 `salient_rows.json`）、`coordinate_flow_natural_figures.py`（作图）；测试 `tests/analysis/position/test_coordinate_flow_natural.py`。
-- 产物：`$WORK_DIR/analysis/position/2026-10-21_coordinate_flow_natural/`，包括 `cases.json`、`gen.jsonl`、`spotcheck.jsonl`、`patch.jsonl`、`attn/`、`flip.jsonl`、`flip_attn/`、`means.npz`、`ablate.jsonl`、`summary.json` 与运行日志。Q2 的原图 attention 来自 2.5e 的 `readout/maps/`。
-- 图：`docs/analysis/position/figures/coordinate_flow_natural/`。
-- 计算量：在与其他任务共享的 A800 与 A40 上约 4 GPU 小时（多次因显存被占用而重启，全部阶段按记录续跑）。
-
-### 图
+## 6. 图
 
 ![salient_gallery](figures/coordinate_flow_natural/salient_gallery.png)
 
@@ -288,3 +280,27 @@ $S$ 衡量表达改变时 attention 从物体 A 转向物体 B 的程度；只�
 ![ablate](figures/coordinate_flow_natural/ablate.png)
 
 图 ablate：答案位置均值消融后重新生成的结果。左：命中率（Wilson 95% CI）；中、右：答案相对未消融答案的横向与纵向偏移（以框宽、框高归一化，均值与 bootstrap 95% CI）。颜色区分组（见图例）：RefCOCO、合成 160 px、合成 64 px、单目标圆、10×10 网格。
+
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验未训练模型，不涉及 checkpoint。下表中 R 表示运行目录 `$WORK_DIR/analysis/position/2026-10-21_coordinate_flow_natural`，S 表示 2.5e 源运行目录 `$WORK_DIR/analysis/representation/2026-10-16_sees_right`；图文件位于 `docs/analysis/position/figures/coordinate_flow_natural/`；全部阶段由 `scripts/analysis/position/coordinate_flow_natural.sh` 通过 `STAGE`（cases、gpu、analyze、figures）选择执行。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.1 节样本表 | R/`cases.json`、R/`images/`；R/`summary.json` 的 `gen` 字段；R/`gen.jsonl`、R/`spotcheck.jsonl` | `coordinate_flow_natural.sh`（`STAGE=cases`、`STAGE=gpu` 的 gen 与 spotcheck 阶段） |
+| 第 3.1 节两张表（attention 峰值位置与物体尺寸） | R/`salient_rows.json`；R/`summary.json` 的 `salient` 字段；原图 attention 取自 S/`readout/maps/` | `coordinate_flow_natural.sh`（`STAGE=analyze`）；源数据由 `scripts/analysis/representation/sees_right.sh` 生成 |
+| 图 salient_gallery.png | S/`cases.json`、S/`readout/maps/`；R/`summary.json` 的 `edges` 字段 | `coordinate_flow_natural.sh`（`STAGE=figures`） |
+| 图 salient_uv.png、salient_size.png | R/`salient_rows.json`；R/`summary.json` 的 `salient` 字段 | 同上 |
+| 第 3.2 节边缘读取 head 表与图 head_edges.png、head_edges_ms_large.png | R/`attn/`；R/`summary.json` 的 `edges`、`edges_ms` 与 `select` 字段 | `coordinate_flow_natural.sh`（`STAGE=gpu` 的 patch 阶段，`STAGE=analyze`、`STAGE=figures`） |
+| 第 3.3 节翻转表与图 flip.png | R/`flip.jsonl`、R/`flip_attn/`；R/`summary.json` 的 `flip` 字段 | `coordinate_flow_natural.sh`（`STAGE=gpu` 的 flip 阶段，`STAGE=analyze`、`STAGE=figures`） |
+| 第 3.4 节 what 与 where 表与图 patch_heads.png、what_where.png | R/`patch.jsonl`；R/`summary.json` 的 `patch` 字段 | `coordinate_flow_natural.sh`（`STAGE=gpu` 的 patch 阶段，`STAGE=analyze`、`STAGE=figures`） |
+| 第 3.5 节消融表与图 ablate.png | R/`ablate.jsonl`、R/`means.npz`（mean ablation 所用的 head 输出均值）；R/`summary.json` 的 `ablate` 字段 | `coordinate_flow_natural.sh`（`STAGE=gpu` 的 means 与 ablate 阶段，`STAGE=analyze`、`STAGE=figures`） |
+| 运行记录 | R/`run_log.jsonl` | `coordinate_flow_natural.sh`（`STAGE=gpu`） |
+
+### 代码与运行记录
+
+- 入口：`scripts/analysis/position/coordinate_flow_natural.sh`（`STAGE=cases|gpu|analyze|figures`，参数集中在脚本顶部）。
+- 代码：`analysis_tools/position/coordinate_flow_natural.py`（case 构建与 GPU 阶段 gen、spotcheck、patch、means、ablate、flip）、`coordinate_flow_natural_analysis.py`（CPU 分析，输出 `summary.json` 与 `salient_rows.json`）、`coordinate_flow_natural_figures.py`（作图）；测试 `tests/analysis/position/test_coordinate_flow_natural.py`。
+- 产物：`$WORK_DIR/analysis/position/2026-10-21_coordinate_flow_natural/`，包括 `cases.json`、`gen.jsonl`、`spotcheck.jsonl`、`patch.jsonl`、`attn/`、`flip.jsonl`、`flip_attn/`、`means.npz`、`ablate.jsonl`、`summary.json` 与运行日志。Q2 的原图 attention 来自 2.5e 的 `readout/maps/`。
+- 图：`docs/analysis/position/figures/coordinate_flow_natural/`。
+- 计算量：在与其他任务共享的 A800 与 A40 上约 4 GPU 小时（多次因显存被占用而重启，全部阶段按记录续跑）。

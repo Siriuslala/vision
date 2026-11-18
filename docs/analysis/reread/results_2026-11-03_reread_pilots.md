@@ -240,6 +240,23 @@ $$
 4. 批量解码与逐条解码的一致性沿用实验 5.3 的核对（48 条作答输入中 46 条一致），本实验没有重新抽查。
 5. 每组题目数为 150–200，单项比较的区间较宽；不显著的差别不应解读为等价。
 
-## 7. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录；文档用图保存在仓库的 `docs/analysis/reread/figures/reread_pilots/` 中，由 `scripts/analysis/reread/reread_pilots.sh`（STAGES=analysis）绘制。记 $R$ 为 `$WORK_DIR/analysis/reread/2026-11-03_reread_pilots`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 选项 1 学习 2 倍缓存模块 l27 的 checkpoint | `$R/train/l27.pt` | `scripts/analysis/reread/reread_pilots.sh`（STAGES=train） |
+| 选项 1 学习 2 倍缓存模块 l27_0 的 checkpoint | `$R/train/l27_0.pt` | `scripts/analysis/reread/reread_pilots.sh`（STAGES=train） |
+| 选项 1 学习 2 倍缓存模块 l27_9 的 checkpoint（第 3 节 lo_l27_9 条件使用） | `$R/train/l27_9.pt` | `scripts/analysis/reread/reread_pilots.sh`（STAGES=train） |
+| 第 2.3 节训练误差图 train_loss.png；训练规模与超参数 | `$R/train/loss.jsonl`、`$R/train/meta_train.json`；`$R/summary.json`（字段 train_last100、train_meta） | `scripts/analysis/reread/reread_pilots.sh`（STAGES=train） |
+| 第 2.3 节特征保真度表与图 fidelity.png | `$R/fidelity/fidelity.jsonl`、`$R/fidelity/meta_fidelity.json`；`$R/summary.json`（字段 fidelity、fidelity_n） | `scripts/analysis/reread/reread_pilots.sh`（STAGES=fidelity） |
+| 第 2.3 节 TextVQA 准确率表、配对比较表与图 opt1_textvqa.png | `$R/opt1_textvqa/results.jsonl`；`$R/summary.json`（字段 opt1） | `scripts/analysis/reread/reread_pilots.sh`（STAGES=opt1_textvqa） |
+| 第 3.2 节 DocVQA $1024^2$ 预算 ANLS 与配对比较、图 opt2_doc.png | `$R/opt2_doc/results.jsonl`；`$R/summary.json`（字段 opt2） | `scripts/analysis/reread/reread_pilots.sh`（STAGES=opt2_doc） |
+| 第 3.2 节 DocVQA $512^2$ 预算 ANLS 与配对比较、图 opt2_doc_512.png | `$R/opt2_doc_512/results.jsonl`；`$R/summary.json`（字段 opt2_512） | `scripts/analysis/reread/reread_pilots.sh`（STAGES=opt2_doc，DOC_MAX_PIXELS=512*512，DOC_TAG=_512） |
+| 第 3.2 节 ViT GFLOPs 与平均序列长度、第 3.3 节时间表 | `$R/opt2_timing/timing.jsonl`、`$R/opt2_timing_512/timing.jsonl`；`$R/summary.json`（字段 opt2_timing、opt2_timing_paired、opt2_timing_512、opt2_timing_paired_512） | `scripts/analysis/reread/reread_pilots.sh`（STAGES=opt2_timing） |
+| 第 3 节 DocVQA 输入图像 | `$WORK_DIR/analysis/deepstack/2026-10-21_natural/viscot_raw/cot_image_data/docvqa/`（与实验 4.5 共用） | `scripts/analysis/deepstack/deepstack_natural.sh`（COMMAND=build） |
+
+### 代码与运行记录
 
 产物位于 WORK_DIR 的 `analysis/reread/2026-11-03_reread_pilots/`：`train/`（三个模块的 checkpoint、`loss.jsonl` 与训练元数据），`fidelity/fidelity.jsonl`（300 个留出窗口的逐读法误差），`opt1_textvqa/results.jsonl`，`opt2_doc/` 与 `opt2_doc_512/`（`results.jsonl` 保存每个题目与条件的调用、窗口、答案、ANLS、ViT FLOPs 与序列长度），`opt2_timing/` 与 `opt2_timing_512/`（逐题分段计时与峰值显存），`summary.json`（全部统计）。程序为 `analysis_tools/reread/reread_pilots.py`（vision tower 加载、学习模块、条件定义、DocVQA 数据与 ANLS）、`reread_pilots_run.py`（训练、保真度、准确率与计时）与 `reread_pilots_analysis.py`（统计与作图），入口为 `scripts/analysis/reread/reread_pilots.sh`，测试为 `tests/analysis/reread/test_reread_pilots.py`。GPU 用量约 1.3 A40 小时与 0.2 A800 小时。

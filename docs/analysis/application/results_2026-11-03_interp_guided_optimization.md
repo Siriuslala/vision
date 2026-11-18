@@ -207,7 +207,28 @@ lora_contrast 在训练外 swap 上与 lora_causal 相同（13/36、23/60），�
 1. **图像片段的双向 DeltaNet 扫描。** 对图像 tokens 增加一次逆序递推（共享或复制权重），与正向输出相加后再进入 full attention 层，在相同数据与 LoRA 下与 lora_causal 比较；预测是开头效应与前文数量依赖消失，同时需要监测纵坐标。
 2. **ViT 定位适配的数据扩展。** 用更多特征对（含 2.7 第二轮的新特征对）训练 ViT 第 6–16 个 block 的 LoRA，以留出特征对为测试集、至少 3 个 seed，检验迁移是否稳定；同时在 POPE、TextVQA、MMVP、GQA 与 BabyVision 找不同子集上评测。
 
-## 7. 运行与产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。下表中 `<run>` 指 `$WORK_DIR/analysis/application/2026-11-03_interp_guided_optimization`，图均位于 `docs/analysis/application/figures/interp_guided_optimization/`，全部统计由 `scripts/analysis/application/interp_opt.sh`（`STAGES=analysis`）汇总到 `<run>/results.json`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 训练数据（2400 条）与探针图像 | `<run>/train.jsonl`、`<run>/probe.jsonl`、`<run>/count.jsonl`、`<run>/coord_ids.json`、`<run>/images/`、`<run>/prepare.json` | `scripts/analysis/application/interp_opt.sh`（`STAGES=prepare`） |
+| 第 3.6 节最优条件 lora_vit（ViT 第 6–16 个 block 的 MLP LoRA，seed 1）的 adapter | `<run>/adapters/lora_vit.pt`，训练日志 `<run>/adapters/lora_vit_log.jsonl`；seed 2、3 为 `lora_vit_s2.pt`、`lora_vit_s3.pt` | `scripts/analysis/application/interp_opt.sh`（`CONDITION=lora_vit`，`STAGES=train,eval`） |
+| 匹配对照 lora_causal（seed 1 / 2 / 3）的 adapter | `<run>/adapters/lora_causal.pt`、`lora_causal_s2.pt`、`lora_causal_s3.pt` 及对应 `*_log.jsonl` | `scripts/analysis/application/interp_opt.sh`（`CONDITION=lora_causal`） |
+| 方案 A lora_bidir（seed 1 / 2）与 lora_vit_bidir 的 adapter | `<run>/adapters/lora_bidir.pt`、`lora_bidir_s2.pt`、`lora_vit_bidir.pt` 及对应 `*_log.jsonl` | `scripts/analysis/application/interp_opt.sh`（`CONDITION=lora_bidir` / `lora_vit_bidir`） |
+| 方案 E lora_contrast 的 adapter 与对比通道参数 | `<run>/adapters/lora_contrast.pt`、`lora_contrast_contrast.pt`、`lora_contrast_log.jsonl` | `scripts/analysis/application/interp_opt.sh`（`CONDITION=lora_contrast`） |
+| 第 3.1 节探针准确率表（训练外 / 训练内 swap 各行命中）；图 probe_accuracy、probe_examples | `<run>/results.json`（`<条件>.probe` 字段，配对检验在 `_paired` 字段）；逐题结果 `<run>/eval/<条件>/probe.jsonl`；图 `probe_accuracy.png`、`probe_examples.png` | `scripts/analysis/application/interp_opt.sh`（各条件 `STAGES=eval`，随后 `STAGES=analysis`） |
+| 第 3.2 节目标的 attention 去向（第 4 层 0.34 等）；图 attention_mass | `<run>/results.json`（`<条件>.mech` 字段）；逐图记录 `<run>/eval/<条件>/mech.jsonl`；图 `attention_mass.png` | `scripts/analysis/application/interp_opt.sh`（`STAGES=mech`） |
+| 第 3.3 节前文数量依赖与开头效应；图 seeds_earlier、start_effect | `<run>/results.json`（`<条件>.probe_by_earlier`、`<条件>.count` 字段）；图 `seeds_earlier.png`、`start_effect.png` | `scripts/analysis/application/interp_opt.sh`（`STAGES=analysis`） |
+| 第 3.3 节 oddness 投影表（第 8、16 层 $z$ 值） | `<run>/results.json`（`<条件>.oddz` 字段）；逐图记录 `<run>/eval/<条件>/oddz.jsonl`；oddness 方向取自 `$WORK_DIR/analysis/representation/2026-11-03_search_asymmetry_r2/directions.npz` | `scripts/analysis/application/interp_opt.sh`；方向由 `scripts/analysis/representation/search_asymmetry_r2.sh` 生成 |
+| 第 3.4 节白底单目标命中与纵坐标偏差表 | `<run>/results.json`（`<条件>.coord` 字段）；逐题结果 `<run>/eval/<条件>/coord.jsonl`；坐标测试集来自 `$WORK_DIR/analysis/position/2026-10-21_targeted_finetune/` | `scripts/analysis/application/interp_opt.sh` |
+| 第 3.5 节先验相减解码表（vcd_all、vcd_digit） | `<run>/results.json`（`vcd_all`、`vcd_digit` 字段）；逐题结果 `<run>/eval/vcd_all/`、`<run>/eval/vcd_digit/` | `scripts/analysis/application/interp_opt.sh`（`CONDITION=vcd_all` / `vcd_digit`） |
+| 第 3.6 节通用能力变化；图 general_delta | `<run>/results.json`（`<条件>.general`、`<条件>.text` 字段）；逐题结果 `<run>/eval/<条件>/general.jsonl`、`text.jsonl`；图 `general_delta.png` | `scripts/analysis/application/interp_opt.sh` |
+| 第 3.6 节 ViT 突出度；图 vit_popout | `<run>/results.json`（`<条件>.vitsal` 字段）；逐图记录 `<run>/eval/<条件>/vitsal.jsonl`；图 `vit_popout.png` | `scripts/analysis/application/interp_opt.sh` |
+| 运行配置与日志 | `<run>/experiment.json`、`<run>/run_<条件>.log` | `scripts/analysis/application/interp_opt.sh` |
+
+### 代码与运行记录
 
 1. 代码：`analysis_tools/application/interp_opt.py`、`interp_opt_run.py`、`interp_opt_analysis.py`；测试：`tests/analysis/application/test_interp_opt.py`。
 2. 入口：`scripts/analysis/application/interp_opt.sh`（参数在脚本顶部，按 CONDITION 与 STAGES 运行）。

@@ -707,11 +707,11 @@ def fig_pipeline(path: Path) -> None:
 
     shared, ordc, coordc, cotc = '#e8f0fb', '#fde9df', '#e3f5ee', '#fdf2d6'
     box(0.1, 4.6, 2.5, 2.4, 'S1 ViT + merger', 'target position written into\ntarget tokens (RoPE; PE on\nuniform canvas)\n[3.4 C2, 3.7 r2]', shared)
-    box(2.9, 4.6, 3.0, 2.4, 'S2 decoder L9–16 DeltaNet', 'raster accumulators on image\ntokens: row chain, column count\nreset at local boundaries;\nread from tokens AFTER the\ntarget in its row\n[3.8 r2, 3.10, 3.11, 3.14]', shared)
+    box(2.9, 4.6, 3.0, 2.4, 'S2 decoder L9–16 DeltaNet', 'raster recurrence on image\ntokens: vertical position code\non every image (alpha^0: y shifts\non grids, figures, photos);\nrow count read from it; column\ncount reset at local boundaries\n[3.8 r2, 3.10, 3.14, 3.15 r2]', shared)
     box(6.2, 4.6, 3.0, 2.4, 'S3 answer-time look (L16–24)', 'answer queries re-read image KV;\nL20 H11 dominant on grids\n(0.89–0.93 of its mass on image);\nedge readers L20/L24 on photos\n[2.5c, 3.11, 3.11 r2, 3.15]', shared)
     box(9.5, 4.6, 3.4, 2.4, 'Text route', 'a number already written in text\nis copied / converted exactly\n(3.12 text conversion slope 0.99;\n3.15 full CoT: 2nd-digit p = 1.00,\nimage mask changes 0/50 answers)', cotc)
     box(0.1, 1.2, 2.9, 2.9, 'T1 ordinal readout', 'reads counts BEFORE the target;\n+1 added at readout;\nfixed before CoT (63/64);\naccurate on 10×10: 62/64\n[1.5, 3.10, 1.7, 3.15]', ordc)
-    box(3.2, 1.2, 3.2, 2.9, 'T2 direct coordinate value', 'grids: count-based position,\n78% of x at 100·col (cell edge);\nshifts with counts before AND\nafter the target; alpha^s edit\nmoves it with the ordinal;\n1st digit from the look, 2nd digit\nfrom 1st-digit margin; 31/64 hit\n[3.9 r2, 3.12, 3.12 r2, 3.15]', coordc)
+    box(3.2, 1.2, 3.2, 2.9, 'T2 direct coordinate value', 'continuous read of the shared\nvertical code, not a count:\nerasing the left neighbour\nmoves x by 0.12 cell (2D grids);\n10×10: 78% of x at 100·col\n(c→100c habit, removed by LoRA);\n1st digit from the look; 31/64 hit\n[3.9 r2, 3.12 r2, 3.15, 3.15 r2]', coordc)
     box(6.6, 1.2, 3.1, 2.9, 'T3 CoT coordinate (grids)', 'step 1: write indices (T1)\n  hit 0.55 → 0.92, values stay\n  at cell edges; conflicts follow\n  the image (w ≈ 0.2)\nstep 2: write (c − 0.5)·100\n  answer copies the number\n  (centre error 65 → 2)  [1.7, 3.15]', cotc)
     box(9.9, 1.2, 3.0, 2.9, 'Natural images (RefCOCO)', 'no indices; CoT writes box edges\n+ arithmetic (68%), answer =\nlast written pair (107/109);\nwithout CoT the masked answer\nkeeps the region (hit 0.95) but\nloses precision (err 29 → 85)\n[3.11 r2, 3.15]', coordc)
     arrow(2.6, 5.8, 2.9, 5.8)

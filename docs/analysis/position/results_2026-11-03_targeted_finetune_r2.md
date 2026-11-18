@@ -327,6 +327,26 @@ $$
 5. **未测试 BabyVision 类定位任务的迁移。**
 6. **文本数字的表示只用 textconv 一种任务对照**，“读出阶段服务于文本数字格式”的推测没有得到直接检验。
 
-## 7. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。下表中 `<run>` 指 `$WORK_DIR/analysis/position/2026-11-03_targeted_finetune_r2`，图的路径相对于 `docs/analysis/position/figures/targeted_finetune_r2/`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 主要结论 4 与表 4 的定位版 LoRA（early1_4_img，2.7 M 参数） | `<run>/adapters/early1_4_img.pt`（LoRA 矩阵），训练日志 `<run>/adapters/early1_4_img_log.jsonl` | `scripts/analysis/position/targeted_finetune_r2.sh`（`CONDITION=early1_4_img STAGES=train`） |
+| 表 4 扩大数据训练的 adapter | `<run>/adapters/{scaled_early1_4_img,scaled_all_linear,scaled_all_but_25_32}.pt` 及同名 `_log.jsonl`；训练集 `<run>/train_scaled.jsonl`、`<run>/scaledprep.json`、`<run>/instruct_prompts.jsonl`、`<run>/instruct_answers.jsonl`、`<run>/scaled_grounding.jsonl` | 同上（`STAGES=scaledprep`、`CONDITION=base STAGES=distill`、`CONDITION=<条件> STAGES=train`） |
+| 表 1 新增训练条件的 adapter | `<run>/adapters/{all_but_mlp28_32,all_but_25_32,mlp28_32_lr1e3,mlp_all,fa_attn,dn_proj,fa_mlp,all_linear_img}.pt` 及同名 `_log.jsonl` | 同上（`STAGES=train`） |
+| 拼接与几何分析所用的全部线性层 LoRA 及第一轮其余条件 | `<run>/adapters/{all_linear,mlp28_32,mlp28_32_r64,late25_32,mixer16_24,mlp10_14}.pt`，为指向 `$WORK_DIR/analysis/position/2026-10-21_targeted_finetune/adapters/` 的符号链接 | `scripts/analysis/position/targeted_finetune.sh`；链接由 `targeted_finetune_r2.sh`（`STAGES=link`）建立 |
+| 表 2 控制条件坐标指标与第二位增益；图 1 | `<run>/eval/<条件>/coord.jsonl`、`<run>/eval/<条件>/fact/`，`<run>/results_r2.json`（`coord`、`mechanism` 字段）；图 `controls.png` | `targeted_finetune_r2.sh`（`STAGES=train,coord,factorial` 与 `STAGES=analysis`） |
+| 表 3 拼接配置；图 2、3 | `<run>/splice/{all_linear,early1_4_img,mlp10_14,scaled_all_linear}.jsonl`、`<run>/splice/all_linear_gen.jsonl`，`<run>/results_r2.json`（`splice`、`splicegen` 字段）；图 `splice_depth_all_linear.png`、`splice_bars_all_linear.png` | 同上（`STAGES=splice,splicegen`） |
+| 第 4.3 节时钟编码 $R^2$（第 15 层 0.67、第 20 层 0.93 等）；图 4–6、S1–S4 | `<run>/results_r2.json`（`geometry` 字段），`<run>/analysis_r2.npz`（流形与时钟平面投影）；residual 捕获位于 `$DATA_DIR/scratch/analysis/position/2026-11-03_targeted_finetune_r2/features/capture`（由 `<run>/capture` 链接）；图 `manifold_q0.png`、`manifold_target_hybrid.png`、`manifold_target.png`、`clock_emergence.png`、`clock_q0_L24.png`、`spectrum_q0.png`、`spectrum_period100.png` | 同上（`STAGES=capture`，拼接配置由 `SPLICE_CONFIG` 指定；`STAGES=analysis`） |
+| 第 4.4 节时钟消融与注入、常量偏移；图 7 | `<run>/splice/clock.jsonl`、`<run>/splice/steer.jsonl`、`<run>/splice/steer_vectors.npz`，`<run>/results_r2.json`（`clock`、`steer`、`steer_refcoco` 字段）；图 `clock_causal.png` | 同上（`STAGES=clock,steer`） |
+| 第 4.5 节首位 logit 差 $m$ 的分辨率；图 8 | `<run>/results_r2.json`（`mechanism` 与 `splice` 下各测试族的 `margin` 子字段）；图 `margin_resolution.png` | 同上（`STAGES=analysis`） |
+| 第 4.6 节线性对齐分析；图 S5 | `<run>/results_r2.json`（`alignment`、`weight_alignment` 字段）；Jacobian 位于 `$DATA_DIR/scratch/analysis/position/2026-11-03_targeted_finetune_r2/features/jacobian`（由 `<run>/jacobian` 链接）；图 `alignment_gain.png` | 同上（`STAGES=jacobian` 与 `STAGES=analysis`） |
+| 表 4 与图 9、10 的坐标与通用能力 | `<run>/eval/<条件>/{coord.jsonl,general.jsonl,text.jsonl}`，`<run>/results_r2.json`（`coord`、`general` 字段）；图 `scaled_coord.png`、`scaled_general.png` | 同上（`STAGES=coord,general`） |
+| 第 3.6 节批量解码抽查 | `<run>/eval/<条件>/spotcheck.json` | 同上（`STAGES=spotcheck`） |
+| 测试集与运行参数 | `<run>/test.jsonl`、`<run>/train.jsonl`、`<run>/images/`、`<run>/experiment.json`、`<run>/run_<条件>.log` | 同上 |
+
+### 代码与运行记录
 
 产物位于 WORK_DIR 的 `analysis/position/2026-11-03_targeted_finetune_r2/`：`adapters/`（新条件的 LoRA 与训练日志，第一轮条件为链接）、`eval/<条件>/`（坐标答案、通用能力、3.12 析因；`fact_maskbug/` 为修正前的定位版析因，保留以便追溯）、`splice/`（拼接、拼接后 greedy 答案、时钟消融与注入、常量偏移）、`capture/` 与 `jacobian/`（链接到 DATA_DIR 的 residual 与 Jacobian）、`train_scaled.jsonl`、`scaledprep.json`、`instruct_answers.jsonl`、`results_r2.json` 与 `analysis_r2.npz`。程序为 `analysis_tools/position/targeted_finetune_r2*.py`（并对 `targeted_finetune.py` / `targeted_finetune_run.py` 做了不改变原有条件行为的扩展），入口为 `scripts/analysis/position/targeted_finetune_r2.sh`，测试为 `tests/analysis/position/test_targeted_finetune_r2.py`，图在 `docs/analysis/position/figures/targeted_finetune_r2/`。

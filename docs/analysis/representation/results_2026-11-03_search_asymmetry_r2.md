@@ -391,7 +391,24 @@ subtle 水平每格 $n = 72$，salient 水平每格 $n = 36$；McNemar 检验在
 5. 旋转与直立十字的不对称与其 29 个缺失方向专属检测器之间的矛盾未进一步分析。
 6. 只使用合成线条图形；自然图像中缺失部件的搜索是否遵循同一机制需要另行检验。
 
-## 10. 运行与产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验不涉及训练，无 checkpoint。下表中的 R2 目录指 `$WORK_DIR/analysis/representation/2026-11-03_search_asymmetry_r2`，全部条目由 `scripts/analysis/representation/search_asymmetry_r2.sh` 生成，图由 STAGE=analyze 写入 `docs/analysis/representation/figures/search_asymmetry_r2/`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 3.1 节特征对表与 `examples.png` | R2 目录下 `items.jsonl`、`images/`、`build_config.json` | `search_asymmetry_r2.sh`（STAGE=build） |
+| 第 3.2 节规模与一致性检查 | R2 目录下 `run_*.json`、`spotcheck.json`、`log_*.txt`；`summary.json` 的 `spotcheck` 字段 | `search_asymmetry_r2.sh`（各 STAGE） |
+| 主要结论 1、第 4.1 节行为图谱表与 `atlas.png` | R2 目录下 `results_behave.jsonl`；`summary.json` 的 `atlas` 字段；第一轮条件引用 `$WORK_DIR/analysis/representation/2026-10-21_search_asymmetry/results_behave.jsonl` | `search_asymmetry_r2.sh`（STAGE=behave，analyze） |
+| 第 4.2 节局部突出度与专属检测器表，`salience.png` | R2 目录下 `capture/*.npz`；`summary.json` 的 `salience`、`template_observer` 字段 | `search_asymmetry_r2.sh`（STAGE=capture，analyze） |
+| 主要结论 2、第 4.3–4.4 节 `patch_neurons.png` 与开口圆 / 闭合圆数值 | `capture/*.npz`；`summary.json` 的 `patch`、`template_observer` 字段 | `search_asymmetry_r2.sh`（STAGE=capture，analyze） |
+| 主要结论 3、第 5.1–5.2 节 oddness 方向、投影表，`direction.png`、`oddness_behaviour.png` | R2 目录下 `directions.npz`、`capture/*.npz`；`summary.json` 的 `oddness` 字段 | `search_asymmetry_r2.sh`（STAGE=capture，direction，analyze） |
+| 第 5.3 节 `attention.png`、`attention_maps.png` | `capture/*.npz`；`summary.json` 的 `attention` 字段 | `search_asymmetry_r2.sh`（STAGE=capture，analyze） |
+| 主要结论 4、第 6 节加方向 / 去方向 / head 消融表与 `steer.png` | R2 目录下 `steer.jsonl`、`steer2.jsonl`、`steer2_heads.json`；`summary.json` 的 `steer`、`steer2` 字段 | `search_asymmetry_r2.sh`（STAGE=steer，steer2，analyze） |
+| 主要结论 5、第 7.1 节位置与排列表，`index.png` 与 logistic 回归系数 | `results_behave.jsonl`；`summary.json` 的 `index`、`index_logit` 字段 | `search_asymmetry_r2.sh`（STAGE=behave，analyze） |
+| 第 7.2 节开头效应 `novelty.png` 与 `index_states.png` | R2 目录下 `states/*.npz`；`summary.json` 的 `surprise`、`index_states` 字段 | `search_asymmetry_r2.sh`（STAGE=states，analyze） |
+
+### 代码与运行记录
 
 - 入口：`scripts/analysis/representation/search_asymmetry_r2.sh`，阶段 build、behave、spotcheck、capture、states、direction、steer、steer2、analyze，参数在脚本顶部设置。
 - 代码：`analysis_tools/representation/search_asymmetry_r2.py`（刺激与无模型度量）、`search_asymmetry_r2_run.py`（GPU 阶段）、`search_asymmetry_r2_analysis.py`（分析）、`search_asymmetry_r2_figures.py`（图）；测试为 `tests/analysis/representation/test_search_asymmetry_r2.py`。复用第一轮的 `search_asymmetry*.py` 与实验 2.6 的 `odd_entity.py`，未修改共享模块。

@@ -207,10 +207,6 @@ BabyVision 细粒度子集在本协议下处于地板效应：前 64 题中 base
 2. 所有结论都针对未经训练的 Qwen3.5-9B 与 thinking off；工具协议下的推理文本长度是该模型的行为，经过工具使用训练的模型可能不同。
 3. 合成任务每个 48 题，单数据集的多数对比在 Holm 校正后不显著，结论以合计比较与效应方向为准。
 
-## 7. 产物
-
-产物位于 WORK_DIR 的 `analysis/reread/2026-10-20_cached_reread/`：`verify/`（路径核对与批量一致性）、各数据集目录（`results.jsonl` 保存全部 prompt 依据、调用文本、窗口、原始回答、评分与 token 计数，`cases.json` 保存题目与证据框，`meta_*.json` 保存运行元数据）、`timing/timing.jsonl` 与 `summary.json`。程序为 `analysis_tools/reread/cached_reread.py`（工具协议、缓存读取、浮点 MRoPE IDs、批量解码、评分）、`cached_reread_run.py`（运行与计时）与 `cached_reread_analysis.py`（统计与作图），入口为 `scripts/analysis/reread/cached_reread.sh`，测试为 `tests/analysis/reread/test_cached_reread.py`。
-
 ## 附录 A：整图放大 2 倍参照
 
 full2x 把整图边长放大 2 倍后作为唯一输入，不调用工具。真实应用中 VLM 接收原始分辨率的图像，不会自行放大整图，因此 full2x 不作为工具方法的判据对照，只用于说明“提高整图分辨率”这一非工具途径在本实验预算下能达到的水平。
@@ -221,3 +217,23 @@ full2x 把整图边长放大 2 倍后作为唯一输入，不调用工具。真�
 
 1. **在 $512^2$ pixels 的输入预算下，full2x 的准确率不低于任何工具条件。** full2x 在 MMVP 与 POPE 上是全部条件中最高的（0.825 与 0.910），在 TextVQA 上为 0.813，与 h27 的 0.822 相当；合成 T5 的行列准确率为 33/48，高于全部工具条件。这说明在这些任务上，限制准确率的主要因素是整图的分辨率，而非局部读取能力。
 2. **full2x 的代价随图像面积增长。** full2x 需要对 4 倍面积的图像做 ViT 前向（TextVQA 中每题 3878 个 patch），并使 LLM 侧的 visual token 增至约 4 倍；batch size 1 的中位耗时为 0.68–0.89 秒。原图本身已是高分辨率时（例如文档图像），这一途径的 ViT 与 KV cache 代价会成为瓶颈，这也是局部重读的应用场景。
+
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录；文档用图保存在仓库的 `docs/analysis/reread/figures/cached_reread/` 中。本实验不涉及训练，无 checkpoint。记 $R$ 为 `$WORK_DIR/analysis/reread/2026-10-20_cached_reread`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.3 节样本与输入示例图 cases.png | `$R/<数据集>/cases.json`、`$R/<数据集>/meta_<数据集>.json` | `scripts/analysis/reread/cached_reread.sh`（各数据集 stage） |
+| 第 2.4 节路径核对与批量一致性 | `$R/verify/verify.json` | `scripts/analysis/reread/cached_reread.sh`（STAGES=verify） |
+| 第 3.1 节各条件准确率表与图 accuracy_by_condition.png | `$R/summary.json`（字段 textvqa、gqa、mmvp、pope 的 conditions）；逐题回答：`$R/<数据集>/results.jsonl` | `scripts/analysis/reread/cached_reread.sh`（STAGES=textvqa,gqa,mmvp,pope） |
+| 第 3.1 节与第 3.2 节配对比较表（c27 − crop1、h27 − crop2、c9 − crop1 等） | `$R/summary.json`（字段 pooled_natural 与各数据集的 paired） | `scripts/analysis/reread/cached_reread.sh` |
+| 第 3.3 节合成 T5 窗口表与图 window_choice.png | `$R/summary.json`（字段 syn_loc）；`$R/syn_loc/results.jsonl` | `scripts/analysis/reread/cached_reread.sh`（STAGES=syn_loc） |
+| 第 3.4 节开销表与图 cost_accuracy.png | `$R/summary.json`（字段 timing）；`$R/timing/timing.jsonl`、`$R/timing/meta_timing.json` | `scripts/analysis/reread/cached_reread.sh`（STAGES=timing） |
+| 第 3.5 节合成色差与缺口的 AUROC、h9 与 h9n/h9r 比较 | `$R/summary.json`（字段 syn_color、syn_gap、pooled_natural）；`$R/syn_color/`、`$R/syn_gap/` | `scripts/analysis/reread/cached_reread.sh`（STAGES=syn_color,syn_gap；h9r 由 CONDS 补充运行） |
+| 第 3.6 节 BabyVision 计数 | `$R/summary.json`（字段 babyvision）；`$R/babyvision/results.jsonl` | `scripts/analysis/reread/cached_reread.sh`（STAGES=babyvision） |
+| 附录 A full2x 比较 | `$R/summary.json`（字段 pooled_natural） | `scripts/analysis/reread/cached_reread.sh` |
+
+### 代码与运行记录
+
+产物位于 `$WORK_DIR/analysis/reread/2026-10-20_cached_reread/`：`verify/`（路径核对与批量一致性）、各数据集目录（`results.jsonl` 保存全部 prompt 依据、调用文本、窗口、原始回答、评分与 token 计数，`cases.json` 保存题目与证据框，`meta_*.json` 保存运行元数据）、`timing/timing.jsonl` 与 `summary.json`。程序为 `analysis_tools/reread/cached_reread.py`（工具协议、缓存读取、浮点 MRoPE IDs、批量解码、评分）、`cached_reread_run.py`（运行与计时）与 `cached_reread_analysis.py`（统计与作图），入口为 `scripts/analysis/reread/cached_reread.sh`，测试为 `tests/analysis/reread/test_cached_reread.py`。

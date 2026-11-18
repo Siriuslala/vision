@@ -277,7 +277,25 @@
 4. 种子重复只覆盖 k1、k4 与 128 head 三个配置。
 5. 结论只针对 Qwen3.5-9B，thinking off。
 
-## 9. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。下表中 `<run>` 指 `$WORK_DIR/analysis/position/2026-10-21_readout_tool_r3`，图的路径相对于 `docs/analysis/position/figures/readout_tool_r3/`，脚本均为 `scripts/analysis/position/readout_tool_r3.sh`（括号内为 `STAGES` 取值）。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 一 head 工具（L20 H11 + 内容 + 粗略坐标）的读出器参数，主要结论 1、2、4 所用 | `<run>/k1_H11_content_approx.pt`（种子 0），`<run>/k1_H11_content_approx@s1.pt`、`@s2.pt`（其余种子），`@nocc.pt`（去掉 clutter 与 chart_ui 的变体） | `fit` |
+| 其他读出器参数（第 4.1 节各输入配置、128-head 与 4-head 工具） | `<run>/{all_content_approx,k4_content_approx,k2_content_approx,k8_content_approx,edge3_content_approx,edge5,edge5_content_approx,edge12_content_approx,L16L20_content_approx,L20_content_approx,rank4_content_approx,k1_H11,k1_H11_content}.pt` 等，及其 `@s1`、`@s2`、`@nocc` 版本 | `fit` |
+| 第 3.1 节读出阶梯表（峰值 184 → 学习聚合 41 → 加内容 19 等）；图 1、图 2 | `<run>/zeroshot.json`、`<run>/zeroshot_points.npz`、`<run>/results_r3.json`（`readers` 字段）、`<run>/predictions_P*.npz`、`<run>/readers_P*.json`；图 `ladder.png`、`salient.png` | `zeroshot`、`fit`、`evaluate`、`figures` |
+| 第 4.1 节 head 数量表与种子方差；图 3 | `<run>/results_r3.json`（`readers`、`paired_vs_full`、`seeds` 字段）；图 `heads_curve.png` | `fit`、`evaluate`、`figures` |
+| 第 4.2 节部署成本表 | `<run>/results_r3.json`（`cost` 字段）、`<run>/runtime_heads_s0.json` | `evaluate` |
+| 第 4.3 节 flash attention 兼容输入表；图 6 | `<run>/readers_vec.json`、`<run>/vec_summary.json`、`<run>/sites_vec.json`、`<run>/predictions_vec.npz`、`<run>/capture_heads_s0.json`；子集 head 输出位于 `$DATA_DIR/scratch/analysis/position/2026-10-21_readout_tool_r3/heads`（由 `<run>/heads` 链接）；图 `vec_readers.png` | `capture_heads`、`fit_vec` |
+| 第 4.4 节边缘读取 head 表 | `<run>/edges.json`、`<run>/edges_points.npz`，`<run>/results_r3.json`（`readers` 中 `edge*` 条目） | `edges`、`fit` |
+| 第 5 节失败模式（小物体命中率 0.88、多同类物体 0.78 等）；图 4、图 5 | `<run>/results_r3.json`（`failure` 字段）、`<run>/refcoco_annotations.json`、`<run>/rows_focus.json`；图 `failure.png`、`examples.png` | `annotate`、`evaluate`、`figures` |
+| 第 7 节与定向微调的比较表（RefCOCO 误差 +6.8、IoU 0.77 对 0.85 等）；图 7 | `<run>/compare_tf.json`（`paired_vs_base`、`paired_tool_vs_trained` 字段）、`<run>/tf_eval/tool_*.jsonl`、`<run>/capture_tf.json`；3.13 测试集 teacher-forcing 特征 `<run>/tf_features/` 中间激活已清理，可由 `scripts/analysis/position/readout_tool_r3.sh`（`capture_tf`）重新生成；定向微调一侧答案见 `$WORK_DIR/analysis/position/2026-10-21_targeted_finetune/eval/` | `capture_tf`、`compare`、`figures` |
+| 读出器训练所用的第二轮采集特征（第 2 节） | `$WORK_DIR/analysis/position/2026-10-20_readout_tool_r2/cases.jsonl`、`own.jsonl`；特征位于 `$DATA_DIR/scratch/analysis/position/2026-10-20_readout_tool_r2/features`（由该目录下 `features` 链接） | `scripts/analysis/position/readout_tool_r2.sh` |
+| 运行日志 | `<run>/analysis_*.log`、`<run>/run_*.log`、`<run>/compare.log` | 同上 |
+
+### 代码与运行记录
 
 1. 代码：`analysis_tools/position/readout_tool_r3.py`（零训练读出、范围特征、RefCOCO 标注）、`readout_tool_r3_analysis.py`（annotate、zeroshot、fit）、`readout_tool_r3_eval.py`（评估、成本、失败模式）、`readout_tool_r3_run.py`（GPU 采集与 flash 兼容读出器）、`readout_tool_r3_compare.py`（与 3.13 比较）、`readout_tool_r3_figures.py`；测试 `tests/analysis/position/test_readout_tool_r3.py`。
 2. 运行入口：`scripts/analysis/position/readout_tool_r3.sh`。

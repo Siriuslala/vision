@@ -203,7 +203,22 @@ decoder 序列的 causal 顺序与线性注意力的递推决定了行列信息�
 6. 只使用合成网格。行首复位在自然图像上同样存在（3.8 E5），但计数累加器在自然图像上对应什么未测。
 7. 与设计的偏离：E3 只在边界 token 一处编辑的阴性结果出现后，加入了空白段编辑（E3b）与视觉内容替换（E3c），二者没有事先登记的预测；base 图像的人工边界只用 $c \ge 6$ 的 52 张。
 
-## 6. 产物
+## 实验产物
 
-产物位于 WORK_DIR 的 `analysis/position/2026-10-20_rowcol_mechanism/`：`gates/`（每张图像的 $\alpha$、$\beta$ 与 42 个单元的 residual 平均，float16，以及 records.jsonl）、`boundary_heads.json` 与 `boundary_gate_stats.npz`（E1）、`gapgate/`、`gapgate2/`、`gapswap/`（E3、E3b、E3c）、`headclass/`（E4）、`implicit/`（E5，含全部推理文本）、`order/`（E6，records.jsonl 与 maps/ 下层 16、20 的 attention）、`spotcheck.json`、`results.json`（全部统计）与 `experiment.json`（模型版本、代码摘要与运行参数）。程序为 `analysis_tools/position/rowcol_mechanism.py`、`rowcol_mechanism_run.py` 与 `rowcol_mechanism_analysis.py`，入口为 `scripts/analysis/position/rowcol_mechanism.sh`，测试为 `tests/analysis/position/test_rowcol_mechanism.py`。
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验未训练模型，不涉及 checkpoint。下表中 R 表示运行目录 `$WORK_DIR/analysis/position/2026-10-20_rowcol_mechanism`；图文件位于 `docs/analysis/position/figures/rowcol_mechanism/`；GPU 阶段、边界 head 选择与 CPU 分析分别由 `scripts/analysis/position/rowcol_mechanism.sh` 的 `COMMAND=run`、`COMMAND=heads` 与 `COMMAND=analyze` 执行。输入图像与 case 取自 `$WORK_DIR/analysis/behavior/2026-10-16_ordinal_mechanism`（`cases.jsonl` 与 `images/`），3.8 的 gate 统计取自 `$WORK_DIR/analysis/position/2026-10-16_sequence_order_r2/gates/stats.json`。
 
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 图 examples.png | R/`gates/records.jsonl`；`$WORK_DIR/analysis/behavior/2026-10-16_ordinal_mechanism/images/` | `rowcol_mechanism.sh`（`COMMAND=analyze`） |
+| 主要结果 1、第 3.1 节表（边界门控）与图 boundary_gates.png | R/`gates/*.pt`（逐图像 $\alpha$、$\beta$ 与单元 residual 平均）、R/`boundary_heads.json`、R/`boundary_gate_stats.npz`；R/`results.json` 的 `gates` 字段 | `rowcol_mechanism.sh`（`COMMAND=run` 的 gates 阶段、`COMMAND=heads`、`COMMAND=analyze`） |
+| 主要结果 6–7、第 3.2 节表（运行计数 probe）与图 running_count_probe.png | R/`gates/*.pt`；R/`results.json` 的 `probe` 与 `probe_examples` 字段 | `rowcol_mechanism.sh`（`COMMAND=analyze`） |
+| 主要结果 2、第 3.3 节表（边界编辑）与图 boundary_intervention.png | R/`gapgate/records.jsonl`、R/`gapgate2/records.jsonl`、R/`gapswap/records.jsonl`；R/`results.json` 的 `gapgate`、`gapgate2`、`gapswap` 字段 | `rowcol_mechanism.sh`（`COMMAND=run` 的 gapgate 类阶段、`COMMAND=analyze`） |
+| 主要结果 3、第 3.4 节表（head 分工）与图 head_classes.png | R/`headclass/records.jsonl`；R/`results.json` 的 `headclass` 字段 | `rowcol_mechanism.sh`（`COMMAND=run` 的 headclass 阶段、`COMMAND=analyze`） |
+| 主要结果 4、第 3.5 节表（隐式计数）与图 implicit_counting.png | R/`implicit/records.jsonl`（含推理文本）；R/`results.json` 的 `implicit` 与 `think_text` 字段 | `rowcol_mechanism.sh`（`COMMAND=run` 的 implicit 阶段、`COMMAND=analyze`） |
+| 主要结果 5、第 3.6 节表（输出顺序）与图 output_order.png | R/`order/records.jsonl`、R/`order/maps/`；R/`results.json` 的 `order` 字段 | `rowcol_mechanism.sh`（`COMMAND=run` 的 order 阶段、`COMMAND=analyze`） |
+| 第 4.1 节图 synthesis.png | 示意图，不依赖数据 | `rowcol_mechanism.sh`（`COMMAND=analyze`） |
+| 数值一致性抽查与运行配置 | R/`spotcheck.json`、R/`experiment.json` | `rowcol_mechanism.sh`（`COMMAND=run` 的 spotcheck 阶段） |
+
+### 代码与运行记录
+
+产物位于 `$WORK_DIR/analysis/position/2026-10-20_rowcol_mechanism/`：`gates/`（每张图像的 $\alpha$、$\beta$ 与 42 个单元的 residual 平均，float16，以及 records.jsonl）、`boundary_heads.json` 与 `boundary_gate_stats.npz`（E1）、`gapgate/`、`gapgate2/`、`gapswap/`（E3、E3b、E3c）、`headclass/`（E4）、`implicit/`（E5，含全部推理文本）、`order/`（E6，records.jsonl 与 maps/ 下层 16、20 的 attention）、`spotcheck.json`、`results.json`（全部统计）与 `experiment.json`（模型版本、代码摘要与运行参数）。程序为 `analysis_tools/position/rowcol_mechanism.py`、`rowcol_mechanism_run.py` 与 `rowcol_mechanism_analysis.py`，入口为 `scripts/analysis/position/rowcol_mechanism.sh`，测试为 `tests/analysis/position/test_rowcol_mechanism.py`。

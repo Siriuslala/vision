@@ -236,7 +236,28 @@
 5. 刺激阶梯每级只有 240 张测试图像，clutter 与 photo_bg 上 bbox 劣势的成因只作了样例层面的解释。
 6. 结论只针对 Qwen3.5-9B，thinking off。
 
-## 11. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。下表中 R 表示运行目录 `$WORK_DIR/analysis/position/2026-10-20_readout_tool_r2`；图文件位于 `docs/analysis/position/figures/readout_tool_r2/`；全部阶段由 `scripts/analysis/position/readout_tool_r2.sh` 通过 `STAGES` 选择执行。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 最终工具 checkpoint（读出器 `cnn_slot_content_approx`） | R/`tool_r2/cnn_slot_content_approx.pt`；消融变体为同目录下 `cnn_slot_content_approx@no_graded.pt`、`cnn_slot.pt`、`cnn_slot@no_graded.pt`、`cnn_content_approx.pt`、`cnn_slot_content.pt`、`cnn_target_end.pt`、`query_content16.pt` | `readout_tool_r2.sh`（`STAGES=fit`） |
+| 读出器输入特征与 PCA 投影 | R/`features`、R/`features_digit`、R/`features_ord`（符号链接至 `$DATA_DIR/scratch/analysis/position/2026-10-20_readout_tool_r2/`）；R/`pca.pt`、R/`pca.json` | `readout_tool_r2.sh`（`STAGES=pca`、`STAGES=capture`） |
+| 第 2.2 节数据与规模 | R/`cases.jsonl`、R/`ordinal_cases.jsonl`、R/`prepare.json`、R/`images/` | `readout_tool_r2.sh`（`STAGES=prepare`） |
+| 第 3 节主结果表（工具与模型的命中率、误差、bbox IoU）与图 1 examples.png | R/`tool_r2/results_r2.json` 的 `final` 与 `by_reader` 字段；R/`tool_r2/final_rows.json`；模型自答 R/`own.jsonl` | `readout_tool_r2.sh`（`STAGES=own,spotcheck,freecall`、`STAGES=evaluate`、`STAGES=figures`） |
+| 第 2.1 节读出器表、第 4.1 节与图 2 readers.png | R/`tool_r2/readers_{B,C,D,E,F,G}.json`、R/`tool_r2/predictions_{B,C,D,E,F,G}.npz`；R/`tool_r2/results_r2.json` 的 `selection` 字段 | `readout_tool_r2.sh`（`STAGES=fit`、`STAGES=evaluate`） |
+| 第 4.2 节适用范围与图 3 applicability.png | R/`tool_r2/results_r2.json` 的 `by_reader` 字段；R/`tool_r2/final_rows.json` | 同上 |
+| 第 5.1 节 1.5 刺激上的工具读数表 | R/`ordcoord.jsonl`；R/`tool_r2/results_r2.json` 的 `ordcoord` 字段 | `readout_tool_r2.sh`（`STAGES=capture`、`STAGES=evaluate`） |
+| 第 5.2 节数位统计表 | R/`tool_r2/results_r2.json` 的 `digits` 字段；R/`tool_r2/readers_digit.json`、R/`tool_r2/predictions_digit.npz`；R/`digitcap_s0.json` | `readout_tool_r2.sh`（`STAGES=capture`、`STAGES=fit_digit`、`STAGES=evaluate`） |
+| 第 6.1 节不使用 attention 权重的读出器表 | R/`tool_r2/readers_*.json`（attention-free 读出器）；R/`tool_r2/results_r2.json` 的 `ridge_best` 字段 | `readout_tool_r2.sh`（`STAGES=fit`，`FIT_ONLY=attnfree`） |
+| 第 6.2 节成本表 | R/`tool_r2/results_r2.json` 的 `cost` 字段；R/`runtime_s*.json` | `readout_tool_r2.sh`（`STAGES=evaluate`） |
+| 第 7.1 节解离干预表与图 4 dissoc.png | R/`dissoc.jsonl`、R/`dissoc_border_dropped.json`；R/`tool_r2/results_r2.json` 的 `dissoc` 字段 | `readout_tool_r2.sh`（`STAGES=dissoc`、`STAGES=evaluate`） |
+| 第 8 节训练外措辞 | R/`tool_r2/readers_*.json` 中的 heldout phrasing 误差 | `readout_tool_r2.sh`（`STAGES=fit`） |
+| 第 8 节自由调用与自答复现性 | R/`freecall.jsonl`、R/`spotcheck.json`；R/`tool_r2/results_r2.json` 的 `freecall` 字段 | `readout_tool_r2.sh`（`STAGES=own,spotcheck,freecall`） |
+| 图 5 pointer.png | R/`tool_r2/alpha_examples.json` | `readout_tool_r2.sh`（`STAGES=figures`） |
+
+### 代码与运行记录
 
 1. 代码：`analysis_tools/position/readout_tool_r2.py`（协议、刺激阶梯、读出器），`readout_tool_r2_run.py`（GPU 阶段），`readout_tool_r2_dissoc.py`（解离干预），`readout_tool_r2_analysis.py`（拟合与评估），`readout_tool_r2_figures.py`（作图）；测试 `tests/analysis/position/test_readout_tool_r2.py`。
 2. 运行入口：`scripts/analysis/position/readout_tool_r2.sh`。

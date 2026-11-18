@@ -42,6 +42,8 @@
 | 2.6 | 异常实体的比较机制 | 以 std/swap 配对分离属性编码与异常性编码，以上下文替换确定比较发生的位置、范围与光栅顺序 | 已完成 | [设计](design_odd_entity.md)、[10-20](results_2026-10-20_odd_entity.md) |
 | 2.7 | 视觉搜索不对称的机理 | 参照视觉搜索心理学范式构造多组特征对，测量 std/swap 准确率与实体数效应；定位 ViT MLP 中的特征出现检测神经元并做对称编辑；分别替换 decoder 各层 token mixer 输出、编辑 DeltaNet 门控，确定比较发生的层类型 | 已完成 | [设计](design_search_asymmetry.md)、[10-21](results_2026-10-21_search_asymmetry.md) |
 | 2.7 第二轮 | 视觉搜索不对称的检测神经元与异常性方向 | 扩展像素包含与互斥的特征对，统计 ViT 中只对目标激活的神经元，估计跨特征共享的异常性方向并以 steering 与 head 消融检验其因果作用，以 3×12 与 12×3 布局区分行位置与之前实体数量 | 已完成 | [11-03 第二轮](results_2026-11-03_search_asymmetry_r2.md) |
+| 2.7 第三轮 | 异常实体定位的计算过程 | 以单图反事实（目标重绘为多数实体）为基础：精确分解读取 head 的注意力 logit 到各组件，记录 Gated DeltaNet 的 delta rule 预测误差与预测来源；以全局与目标局部的 full attention 跨实体阻断、DeltaNet 记忆清除、状态预热与目标处噪声化区分检测与比较两种定位模式及开头劣势的来源；再以逐 head 阻断与输出替换、MLP 神经元直接贡献及 top-k 神经元的必要性与充分性、读取 head 的 QK 记录，把比较电路具体到 head 与神经元 | 已完成 | [11-05 第三轮](results_2026-11-05_search_circuit.md)，[设计](design_2026-11-05_search_circuit.md) |
+| 2.7 第四轮 | 视觉搜索：从输入到输出的完整计算链 | 以同类图像（全部画成目标类型）构造参照替换；在 ViT 中按选择性与 block 段替换目标 patch 的神经元、MLP 与 attention 输出；按 token 子集替换与插入 decoder 输入；检验第 8 层 head 6 的零化、均值化与替换；精确分解 MLP 8–15 神经元的门控预激活并测量自身内容与参照的抵消；在不同位置替换读取 head 读到的目标 value；在 Qwen3-VL-8B 上重复核心分析 | 已完成 | [11-11 第四轮](results_2026-11-11_search_pipeline.md) |
 
 ## 5. 子实验之间的关系
 

@@ -187,6 +187,23 @@
 5. point 与 odd 的 think 回答截断较多（14/64 与 11/64，上限 1024 tokens），编辑续写上限 512 tokens 导致 point 的编辑结论不稳定。
 6. 共享 GPU 上大部分阶段以模型拆分方式运行；批量与参考解码答案一致 17/20。
 
-## 6. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验不涉及训练，无 checkpoint。下表中的 CM 目录指 `$WORK_DIR/analysis/behavior/2026-10-21_cot_mechanism`，全部条目由 `scripts/analysis/behavior/cot_mechanism.sh` 生成，图由 COMMAND=analyze 写入 `docs/analysis/behavior/figures/cot_mechanism/`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2 节子实验规模表与 `stimuli.png`；批量与参考解码一致性 17/20 | CM 目录下 `gen/records.jsonl`、`gen/spotcheck.json`、`run_*.json` | `cot_mechanism.sh`（COMMAND=run，STAGES=gen） |
+| 主要结果 1、2，第 3.1 节失败模式表与 `taxonomy.png` | CM 目录下 `taxonomy/coded.jsonl`；`summary.json` 的 `taxonomy` 字段；所编码的历史语料来自 `$WORK_DIR/analysis/representation/2026-10-20_odd_entity/results_behave.jsonl` 等已有实验 | `cot_mechanism.sh`（COMMAND=taxonomy，analyze） |
+| 主要结果 3、第 3.2 节截断强制作答与 `early_answer.png` | CM 目录下 `faith/records_count.jsonl`、`faith/records_rowcol_odd_point.jsonl`；`summary.json` 的 `faith` 字段 | `cot_mechanism.sh`（STAGES=faith） |
+| 主要结果 4、第 3.3 节行号编辑表与 `edit.png` | 同上 `faith/records_*.jsonl`；`summary.json` 的 `faith` 字段 | `cot_mechanism.sh`（STAGES=faith） |
+| 第 3.4 节先答后解释表 | `faith/records_*.jsonl`、`gen/records.jsonl`；`summary.json` 的 `faith` 字段 | `cot_mechanism.sh`（STAGES=gen,faith） |
+| 主要结果 5、第 3.5 节通道替换表，`channel_swap_answer.png`、`channel_swap_first_claim.png` | CM 目录下 `mech/records.jsonl`；`summary.json` 的 `mech` 字段 | `cot_mechanism.sh`（STAGES=mech） |
+| 第 3.5 节 `attention_summary.png`、`timeline_rowcol.png`、`timeline_point.png`、`timeline_odd.png` | `summary.json` 的 `attention` 字段（汇总统计保留）；逐步注意力探针（CM 目录下 `mech/probes/`）中间激活已清理，可由 `scripts/analysis/behavior/cot_mechanism.sh`（STAGES=mech）重新生成 | `cot_mechanism.sh`（STAGES=mech，COMMAND=analyze） |
+| 主要结果 6、第 3.6 节与 3.10 的连接表 | CM 目录下 `mech_edit/records.jsonl`；`summary.json` 的 `mech` 字段 | `cot_mechanism.sh`（STAGES=mech_edit） |
+
+由于逐步注意力探针已清理，在未重新执行 STAGES=mech 的情况下单独运行 COMMAND=analyze 会使 `summary.json` 的 `attention` 字段与对应时间线图无法重建，因此重新分析前须先重新生成探针。
+
+### 代码与运行记录
 
 产物位于 WORK_DIR 的 `analysis/behavior/2026-10-21_cot_mechanism/`：`taxonomy/coded.jsonl`（全部 2143 条回答的规则编码）、`gen/records.jsonl` 与 `gen/spotcheck.json`（新生成语料与一致性检查）、`faith/records_*.jsonl`（截断与编辑）、`mech/records.jsonl` 与 `mech/probes/*.npz`（通道替换的文本与注意力探针）、`mech_edit/records.jsonl`（E3d）、`summary.json`（全部统计）与 `run_*.json`（运行参数、模型版本与代码摘要）。程序为 `analysis_tools/behavior/cot_mechanism.py`、`cot_mechanism_engine.py`、`cot_mechanism_run.py`、`cot_mechanism_taxonomy.py`、`cot_mechanism_analysis.py` 与 `cot_mechanism_figures.py`，入口为 `scripts/analysis/behavior/cot_mechanism.sh`，测试为 `tests/analysis/behavior/test_cot_mechanism.py`。

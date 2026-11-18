@@ -362,11 +362,27 @@ ViT 第 9 层、$D_1$ 与 Full 的第 4 层能重建立方体边缘与碗的轮�
 3. **位置可读性扩展为位置与细节的逐层读出。** 计划第 10 节要求比较第 9 层注入特征与主路径中目标位置的可读程度；本文对每个视觉 token 读出位置与三类细节，覆盖 ViT、注入项与 decoder 各层，并加入 Qwen3.5 对照。
 4. **Blur-2 与 Full、Off、Mean 的坐标任务结果直接取自 4.3 的运行。** 样本与实现完全相同（同一组 cases 与同一替换方式）。
 
-## 8. 运行与产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验不涉及训练，无 checkpoint。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.2 节注入项输入图像（图 inputs.png） | 图：`$WORK_DIR/analysis/deepstack/2026-10-20_todo/analysis/inputs.png`；样本：`$WORK_DIR/analysis/deepstack/2026-10-20_todo/cases.jsonl`、`build.json` | `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=build、analyze） |
+| 第 3.1 节修改生效核对表（各层差异与 logits 最大差） | `$WORK_DIR/analysis/deepstack/2026-10-20_todo/checks/verify_qwen3_vl_8b.jsonl` | `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=verify） |
+| 第 3.1 节逐条解码核对 | `$WORK_DIR/analysis/deepstack/2026-10-20_todo/checks/spotcheck_qwen3_vl_4b.jsonl` | `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=spotcheck） |
+| 第 4.1 节 8B 与 4B 模糊扫描表、图 sweep.png | 数据：`$WORK_DIR/analysis/deepstack/2026-10-20_todo/analysis/summary.json`（字段 behavior.<模型>.coord、rowcol）、`analysis/tables.md`；原始回答与评分：`runs/<模型>/<条件>.jsonl`、`<条件>.scores.jsonl`；图：`analysis/sweep.png` | `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=run、score、analyze） |
+| 第 4.2 节镜像注入表、图 mirror.png 与 mirror_refcoco.png | 数据：`$WORK_DIR/analysis/deepstack/2026-10-20_todo/analysis/summary.json`（字段 behavior.<模型>.mirror）；图：`analysis/mirror.png`、`analysis/mirror_refcoco.png` | `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=run、analyze） |
+| 第 4.3 节非坐标任务对照表与图 general.png | 数据：`$WORK_DIR/analysis/deepstack/2026-10-20_todo/analysis/summary.json`（字段 behavior.<模型>.general、calibration）；图：`analysis/general.png` | `scripts/analysis/deepstack/deepstack_todo.sh`（TASKS=POPE TextVQA BabyVision；COMMAND=run、score、analyze） |
+| 第 4.4 节可读性表与图 position/hfenergy/structure/coarse_readability.png | 数据：`$WORK_DIR/analysis/deepstack/2026-10-20_todo/analysis/representation.json`；图：`analysis/*_readability.png` | `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=represent、analyze） |
+| 第 4.4 节灰度重建图 reconstruction.png | 数据：`$WORK_DIR/analysis/deepstack/2026-10-20_todo/analysis/recon_qwen3_vl_8b.npz`、`recon_qwen35_9b.npz`；图：`analysis/reconstruction.png` | `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=analyze） |
+| 第 4.4 节各读出位置的 token 表征 | 中间激活已清理，可由 `scripts/analysis/deepstack/deepstack_todo.sh`（COMMAND=represent）重新生成 | `scripts/analysis/deepstack/deepstack_todo.sh` |
+
+### 代码与运行记录
 
 运行入口为 scripts/analysis/deepstack/deepstack_todo.sh，参数集中在脚本顶部，COMMAND 选择步骤：build（样本与表征图像）、verify（修改生效与镜像算子核对）、run（指定模型、条件与任务的批量回答，可续跑）、spotcheck（逐条解码核对）、represent（表征提取）、score（评分）、analyze（统计、读出与作图）。代码位于 analysis_tools/deepstack/ 下的 deepstack_todo.py 与 deepstack_todo_analysis.py，测试位于 tests/analysis/deepstack/test_deepstack_todo.py。
 
-产物位于 WORK_DIR/analysis/deepstack/2026-10-20_todo/：
+产物位于 $WORK_DIR/analysis/deepstack/2026-10-20_todo/：
 
 - cases.jsonl、build.json、rep_images.jsonl：A、B 组样本与 C 组图像列表；images 与 refcoco_images 为指向 4.3 产物的符号链接，pope_images、textvqa_images、babyvision_images、rep_images 为本实验使用的图像；
 - runs/<模型>/<条件>.jsonl：原始回答（含首 token 的 $s$ 与 batch size），<条件>.scores.jsonl 为评分，<条件>.json 为运行配置；

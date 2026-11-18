@@ -488,7 +488,27 @@ $$
 5. **20×20 网格未分析。** 第一轮报告的 20×20 网格右偏一列，本文的实验没有覆盖。
 6. **强制数字的输入不在训练分布内。** 强制第二位偏离真值的个位测量只说明计算类型。
 
-## 7. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。下表中 `<r2>` 指 `$WORK_DIR/analysis/position/2026-10-21_digit_failure_r2`，`<r3>` 指 `$WORK_DIR/analysis/position/2026-11-03_digit_failure_r3`，图的路径相对于 `docs/analysis/position/figures/digit_failure_r2/`。本实验不训练模型，不涉及 checkpoint。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 图 1 凸锥示意（模拟） | 图 `cones.png`，由代码直接生成，无数据产物 | `scripts/analysis/position/digit_failure_r3.sh`（`STAGES=analysis`） |
+| 主要结论 2 与第 4.1 节首位圆弧几何（前两奇异方向占 0.87、Spearman 0.9998、每 100 单位 43°–45°）；图 2、图 3 | `<r2>/arrays.npz`、`<r2>/round1_compact.npz`、`<r2>/weights.npz`，`<r2>/results.json`（`geometry` 字段），`<r3>/results_r3.json`（`angle` 字段）、`<r3>/arrays_r3.npz`；图 `svd_angle.png`、`geometry.png` | `scripts/analysis/position/digit_failure_r2.sh`（`STAGES=analysis`）；角度统计与图 2 由 `digit_failure_r3.sh`（`STAGES=analysis`） |
+| 主要结论 3、4 的 patching 恢复比例（0.29、0.57、0.87、0.03、0.70、0.95）与读取位置扫描；图 4 | `<r2>/patch.jsonl`、`<r2>/tail.jsonl`，`<r2>/results.json`（`patch`、`tail` 字段）；图 `sources.png` | `digit_failure_r2.sh` |
+| 第 4.2 节 attention 质量；图 5 | `<r2>/attn.jsonl`，`<r2>/results.json`（`attention` 字段）；图 `attention.png` | `digit_failure_r2.sh` |
+| 主要结论 5、6 的相邻差回归（解释方差 0.70–0.87、斜率 0.72–0.80 nats、分辨率 25–42 单位、两段斜率之积 0.39–0.49）与相应表格；图 6、图 7 | `<r2>/results.json`（`margin`、`q1_model` 字段），`<r3>/results_r3.json`（`adjdiff` 字段）；图 `margin.png`、`adjdiff.png` | `digit_failure_r2.sh`；图 7 由 `digit_failure_r3.sh`（`STAGES=analysis`） |
+| 首位相邻差 steering（斜率 0.58–0.69）；图 8 | `<r2>/steer.jsonl`，`<r2>/results.json`（`steer` 字段）；图 `steer.png` | `digit_failure_r2.sh` |
+| 通道阻断（相邻差 100% 经短卷积）；图 9 | `<r3>/relay.jsonl`，`<r3>/results_r3.json`（`relay` 字段）；图 `relay.png` | `scripts/analysis/position/digit_failure_r3.sh` |
+| 平移检验；图 10 | `<r2>/results.json`（`q1_model.<族>.shift_test` 字段），来源为第一轮 residual 分片与 `<r2>/round1_compact.npz`；图 `shift.png` | `digit_failure_r2.sh`（`STAGES=analysis`） |
+| 第 4.3 节个位读出表（真值概率 0.10–0.11、卷积槽位 0.79、斜率 0.64）；图 11 | `<r3>/units.jsonl`、`<r3>/patch3.jsonl`，`<r3>/results_r3.json`（`units`、`patch3` 字段）；图 `units.png` | `digit_failure_r3.sh` |
+| 第 4.4 节 500 吸附：先验神经元直接贡献表、消融（平台比例 0.89 → 0.44）；图 12 | `<r2>/capture.jsonl`、`<r2>/ablation_plan.npz`、`<r2>/ablate.jsonl`，`<r2>/results.json`（`prior_dla`、`ablation`、`prior_behaviour` 字段）；$q_1$ 激活位于 `$DATA_DIR/scratch/analysis/position/2026-10-21_digit_failure_r2/features`（由 `<r2>/features` 链接）；图 `prior.png` | `digit_failure_r2.sh` |
+| 图 13 机制链（示意图） | 图 `chain.png`，无数据产物 | `digit_failure_r3.sh`（`STAGES=analysis`） |
+| 第一轮输入与 residual 分片（读出几何的来源） | `$WORK_DIR/analysis/position/2026-10-20_digit_failure/` | `scripts/analysis/position/digit_failure.sh` |
+| 运行参数与日志 | `<r2>/experiment.json`、`<r2>/*.log`，`<r3>/experiment.json`、`<r3>/run.log` | 同上 |
+
+### 代码与运行记录
 
 第二轮产物位于 WORK_DIR 的 `analysis/position/2026-10-21_digit_failure_r2/`：`weights.npz`（数字 unembedding、最终 norm 增益与逐神经元、逐 head 的数字投影）、`patch.jsonl`、`tail.jsonl`、`attn.jsonl`、`capture.jsonl` 与 `features/capture/`（$q_1$ 激活）、`ablation_plan.npz`、`ablate.jsonl`、`steer.jsonl`、`round1_compact.npz`（从第一轮分片中抽取的数组）、`results.json`、`arrays.npz`、`experiment.json`。程序为 `analysis_tools/position/digit_failure_r2.py`（GPU 阶段）、`digit_failure_r2_analysis.py`（CPU 分析与神经元选择）与 `digit_failure_r2_figures.py`（作图），入口为 `scripts/analysis/position/digit_failure_r2.sh`，测试为 `tests/analysis/position/test_digit_failure_r2.py`。
 

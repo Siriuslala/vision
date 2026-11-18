@@ -255,9 +255,28 @@ probe 在第 8、12、16、20 层的图像 token 上训练，$b$ 的范围为四
 5. **knockout 的破坏性。** 第 8 层 knockout 同时降低一般计数能力，只能给出必要条件；Qwen3-VL 的重新计数比例与其少计倾向部分重叠，应视为上界。
 6. **小模型。** 小模型的输入只有内容与可学习的绝对位置，没有 ViT、MRoPE 与预训练；种子间差异大，只用于检验结构性的“能”与“不能”。
 
-## 10. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验未训练 VLM，小模型的训练结果保存在运行目录中。下表中 R 表示运行目录 `$WORK_DIR/analysis/position/2026-10-21_causal_vs_linear`；图文件位于 `docs/analysis/position/figures/causal_vs_linear/`；全部任务由 `scripts/analysis/position/causal_vs_linear.sh` 通过 `JOB`（vl、q35_gate、q35_knock、toy、analyze）选择执行。下文中 `<mode>` 取 `q35_none`、`q35_nodecay`、`q35_nowrite_target`、`q35_freeze`、`q35_freeze_l9_16`、`vl_ds_on`、`vl_ds_off`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.1 节图 1 inputs_groups.png | R/`gen_<mode>.jsonl`；case 来自 `$WORK_DIR/analysis/position/2026-10-20_coordinate_flow` | `causal_vs_linear.sh`（`JOB=analyze`） |
+| 第 2.3 节实际执行与数值检查 | R/`run_log.jsonl`、R/`spotcheck_vl_ds_on.jsonl` | `causal_vs_linear.sh`（`JOB=vl`、`JOB=q35_gate`） |
+| 主要结果、第 3.1 节表（KV 载体）与图 2 kv_groups.png | R/`kv_<mode>.jsonl`；R/`summary.json` 的 `kv` 字段 | `causal_vs_linear.sh`（`JOB=vl`、`JOB=q35_gate`、`JOB=analyze`） |
+| 第 3.2 节图 3 kv_layers.png | R/`kv_<mode>.jsonl`；R/`summary.json` 的 `kv` 字段 | 同上 |
+| 第 3.3 节表（attention 剖面）与图 4 attention_profile.png | R/`kv_attn_<mode>/`；R/`summary.json` 的 `attention` 与 `attention_sizes` 字段 | 同上 |
+| 第 3.4 节表（生成正确率） | R/`gen_<mode>.jsonl`；R/`summary.json` 的 `gen` 字段 | 同上 |
+| 第 4 节表（DeltaNet 编辑） | R/`gen_q35_*.jsonl`、R/`kv_q35_*.jsonl`；R/`summary.json` 的 `gen` 与 `kv` 字段 | `causal_vs_linear.sh`（`JOB=q35_gate`、`JOB=analyze`） |
+| 第 5 节表（小模型）与图 5 toy_carriers.png、图 6 toy_scatter.png | R/`toy/<arch>_<layout>/`（各种子的训练结果与 patching 记录）；R/`summary.json` 的 `toy` 字段 | `causal_vs_linear.sh`（`JOB=toy`、`JOB=analyze`） |
+| 第 6.1 节表（Qwen3-VL 序号行为）与图 7 ordinal_compare.png | R/`ordinal/vl_ds_on_none.jsonl`、R/`ordinal/vl_ds_off_none.jsonl`；R/`summary.json` 的 `ordinal` 字段 | `causal_vs_linear.sh`（`JOB=vl`、`JOB=analyze`） |
+| 第 6.1 节运行计数 probe 的重新计数权重 | R/`summary.json` 的 `probe` 字段、R/`ordinal/probe_cache.json`；probe 所用的逐样本图像 token 特征 R/`ordinal/vl_ds_on_none/`、R/`ordinal/vl_ds_off_none/` 中间激活已清理，可由 `causal_vs_linear.sh`（`JOB=vl`）重新生成 | `causal_vs_linear.sh`（`JOB=vl`、`JOB=analyze`） |
+| 第 6.2 节 knockout 表与图 8 knockout_32px.png | R/`ordinal/q35_none_*.jsonl`；knockout 条件的图像 token 特征 R/`ordinal/q35_none_img:*/`；R/`summary.json` 的 `knock` 字段（`behaviour`、`paired`、`probe`） | `causal_vs_linear.sh`（`JOB=q35_knock`、`JOB=analyze`） |
+| 第 6.2 节 probe 的无编辑基线与 local knockout | R/`summary.json` 的 `knock.probe` 字段；对应特征 R/`ordinal/q35_none_none/` 与 R/`ordinal/q35_none_local:4,8,12,16/` 中间激活已清理，可由 `causal_vs_linear.sh`（`JOB=q35_knock`）重新生成 | 同上 |
+
+### 代码与运行记录
 
 - 代码：`analysis_tools/position/causal_vs_linear.py`（门控编辑、knockout、KV patching 与 attention 剖面）、`causal_vs_linear_run.py`（GPU 阶段 gen、spotcheck、kv、ordinal）、`causal_vs_linear_toy.py`（小模型）、`causal_vs_linear_analysis.py`（统计与作图）；测试 `tests/analysis/position/test_causal_vs_linear.py`。
 - 运行入口：`scripts/analysis/position/causal_vs_linear.sh`，参数 `JOB` 取 vl、q35_gate、q35_knock、toy、analyze。
-- 结果：`WORK_DIR/analysis/position/2026-10-21_causal_vs_linear/`，其中 `summary.json` 汇总全部统计，`kv_<mode>.jsonl` 为逐回答的恢复比例，`kv_attn_<mode>/` 为 attention 剖面，`ordinal/` 为序号回答与 probe 特征，`toy/` 为小模型结果。
+- 结果：`$WORK_DIR/analysis/position/2026-10-21_causal_vs_linear/`，其中 `summary.json` 汇总全部统计，`kv_<mode>.jsonl` 为逐回答的恢复比例，`kv_attn_<mode>/` 为 attention 剖面，`ordinal/` 为序号回答与 probe 特征，`toy/` 为小模型结果。
 - 图：`docs/analysis/position/figures/causal_vs_linear/`。

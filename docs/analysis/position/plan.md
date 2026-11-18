@@ -45,13 +45,21 @@
 | 3.11 | 坐标读出的信息流 | 对 128 个 full-attention head 逐一、逐层与留一 patching，按目标、同行、同列与背景等子集替换图像 KV，交换 11 种输出格式的坐标顺序，在 33 个位置追踪残差中的坐标，并重建 6 个位置的位置场 | 已完成；[设计](design_coordinate_flow.md)、[结果](results_2026-10-20_coordinate_flow.md) |
 | 3.11 第二轮 | 自然图像的坐标读出 | 以替换指代对象（what）与移动目标（where）两类配对在答案位置 patching 各 head 与 DeltaNet 输出，回归各 head 的 attention 峰值与目标框边缘，上下翻转图像检验显著部位，均值消融 head 集合，并以合成多形状图像对照 | 已完成；[结果](results_2026-10-21_coordinate_flow_natural.md) |
 | 3.11 第三轮 | 边缘读取 head 的作用 | 在 872 张多类别自然图像（RefCOCO、PACO-LVIS、Pascal-Part、COCO-Stuff）上按每个坐标数值分别回归读取 head 的 attention 峰值与目标框边缘、物体极值点与部件，并以输出替换与均值消融确定 L20 H11 的作用 | 已完成；[结果](results_2026-11-03_edge_heads.md) |
+| 3.11 第四轮 | 边缘读取 head 的读取位置与 L20 H11 的功能 | 以边缘带协议统计框与点作答中各读取 head 在每个输出数值处的 attention 区域，以单边位移、head 输出 patching 与逐层 MLP 冻结检验两组边缘读数的组合方式，并以合成与自然合成图像中的 what/where 对与 query 互换界定 L20 H11 的功能 | 已完成；[结果](results_2026-11-05_edge_heads_r2.md) |
+| 3.11 第五轮 | 中心合成的来源与 L20 H11 的特殊性 | 以解码时逐步移植 head 组输出的单边位移对、MLP 24–30 神经元归因、9 类由合成到自然的图像与逐 head attention 模式互换，检验 0.5 的来源与 L20 H11 的作用（两个模型） | 已完成；[结果](results_2026-11-11_edge_heads_r3.md) |
 | 3.12 | 坐标数字读出的失败机理 | 强制首位数字 k = 1..9 的析因实验，记录前两个数位位置的数字分布、各层残差与逐组件 direct logit attribution；在空白画布、RefCOCO、网格、计数与文本数值换算上对照，并以空白画布校准检验中心先验 | 已完成；[设计](design_digit_failure.md)、[结果](results_2026-10-20_digit_failure.md) |
 | 3.12 第二轮 | 坐标数字读出机理的完善 | 区分线性读出假设中由架构决定与需实证的部分，测量首位读出轨迹的几何；在第二位数字生成步上分别替换图像 KV、L20 H11 路径与 DeltaNet 短卷积状态；以相邻边际回归与 steering 检验第二位数字的来源；对中心先验神经元做均值消融 | 已完成；[结果](results_2026-10-21_digit_failure_r2.md) |
 | 3.13 | 基于机理的定向微调 | 以 3200 条精确坐标数据比较全部线性层与按机理选择的参数子集（MLP 28–32、第 25–32 层 MLP 与 DeltaNet、第 16–24 层 token mixer、同参数量的 MLP 10–14）的 LoRA，评测坐标与通用能力，并在训练后的模型上重跑 3.12 的测量 | 已完成；[设计](design_targeted_finetune.md)、[结果](results_2026-10-21_targeted_finetune.md) |
 | 3.13 第二轮 | 缺陷定位与编码变化 | 增加只训 attention、DeltaNet 投影、attention+MLP 与冻结读出层的 LoRA 对照，以原模型与微调模型之间的逐层与逐 token 拼接定位修复所在，分析上游坐标编码的几何变化，训练定位版 LoRA 并扩大数据规模 | 已完成；[结果](results_2026-11-03_targeted_finetune_r2.md) |
 | 3.14 | 因果掩码与线性注意力 | 在只有 causal full attention 的 Qwen3-VL（DeepStack 开与关）上重复图像 KV 子集替换与 attention 剖面，在 Qwen3.5 上施加五种 DeltaNet 门控干预与第 4–16 层 full attention 阻断，训练线性与 softmax 的小模型对照，并研究 32 pixels 网格的重新计数 | 已完成；[设计](design_causal_vs_linear.md)、[结果](results_2026-10-21_causal_vs_linear.md) |
 | 3.14 第二轮 | 行列载体的形成原理 | 从 Gated DeltaNet 的更新式出发推导列累加器、行累加器与“本行含有目标”广播三类理想 head，比较两个模型在纵横坐标查询处读取 head 的 attention 分布与单 head 输出 patching | 已完成；[结果](results_2026-11-03_causal_vs_linear_r2.md) |
+| 3.14 第三轮 | 纵坐标读取时行上 attention 的来源 | 在 Qwen3-VL 与 Qwen3.5 中把读取 head 的 attention 分数分解为 MRoPE 旋转项与内容项，以跨图像 query/key 互换、答题时刻 value 平移与 token 顺序置换检验目标行 attention 的选择方式与因果作用 | 已完成；[结果](results_2026-11-05_row_attention.md) |
+| 3.14 第四轮 | 行首锚点的来源 | 以内容匹配替换（第 0 列换成像素相同的第 2 列）沿 ViT、DeepStack 与 decoder 定位左边缘加分的写入层，在 11 类合成图像上测量左边缘加分、行匹配与分数差，并以 value 行号含量与答题时刻 value 平移检验行首的因果作用（两个模型） | 已完成；[结果](results_2026-11-11_row_anchor.md) |
 | 3.15 | 行列序号与坐标数值：共享与差异 | 以强制作答前缀（无推理、模板行列句、截断或完整推理）及改写行列号、遮蔽图像的变体分解推理中的坐标计算，以分级的 DeltaNet 衰减编辑检验网格坐标是否读取计数状态，并在 RefCOCO 上对照直接作答与先推理后作答 | 已完成；[结果](results_2026-11-03_ordinal_vs_coordinate.md) |
+| 3.15 第二轮 | 坐标数值的读出机理：自然图像与网格 | 在网格、散布图形、单图形、缩略图网格与 RefCOCO 上比较读图时序与读图 head，以逐步图像遮蔽、逐步 attention 计时与前一 token 状态 patching 分解每一位数字的信息来源，以关闭 DeltaNet 遗忘、擦除前驱实体与定位版 LoRA 区分右边界吸附的架构与参数来源 | 已完成；[结果](results_2026-11-05_coordinate_mechanism_natural.md) |
+| 3.15 第三轮 | 位置信息的来源 | 以 DeltaNet 各 head 输出的精确分解、跨图像类型 probe、行与列的序列循环平移、关闭遗忘与沿计数/位置方向的 steering，区分 DeltaNet 状态中的位置、计数与坐标数值，并比较自然与合成图像的位置来源（两个模型） | 已完成；[结果](results_2026-11-11_position_sources.md) |
+| 3.16 | 坐标读出缺陷的先验定位 | 在原模型上由数字读出机理推出对上游编码的要求，以逐层移植文本数值通路的编码、读取层扫描与逐 token 梯度杠杆检验图像通路是否满足要求，在训练前登记应调整的层、token 与预期的表示变化，交由 7.2 检验 | 已完成；[结果](results_2026-11-05_readout_prior_localization.md) |
+| 3.16 第二轮 | 坐标读出缺陷的理论依据与精确定位 | 由读出的线性形式推导周期 100 的必要性并以傅里叶谱与模拟验证；逐层梯度、单层 adapter 拼接、steering 与 patching 定位修复入口；预注册确认训练；Qwen3-VL 对照 | 已完成；[结果](results_2026-11-11_readout_prior_r2.md) |
 | 3.9 第二轮 | 坐标读出工具的改进与适用范围 | 模型调用时先填写粗略坐标，工具在答案槽位读取 attention 与内容特征；比较含与不含 attention 的读出器及其计算成本，在五级真实感合成场景与 RefCOCO 上界定适用范围，并以干预检验坐标与序号读出的关系 | 已完成；[设计](design_readout_tool.md)、[结果](results_2026-10-20_readout_tool_r2.md) |
 | 3.9 第三轮 | 精简坐标读出工具并与微调比较 | 逐步比较 3.11 的峰值读出与工具读出，测量读出精度随 head 数、层数与输入类型的变化（含 flash attention 兼容输入与边缘 head），分析自然图像上的失败类型，并在 3.13 的测试集上与定向微调比较 | 已完成；[结果](results_2026-10-21_readout_tool_r3.md) |
 

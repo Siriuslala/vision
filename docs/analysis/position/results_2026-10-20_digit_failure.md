@@ -289,6 +289,29 @@ $\sigma$ 为第 4.4 节高斯证据模型的拟合值（坐标为 0–1000 单�
 6. **数据与结构的判断没有经过训练实验验证**（第 4.3 节）。
 7. **直接 logit 归因只含直接路径**，冻结了最终归一化尺度。
 
-## 6. 产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验未训练模型，不涉及 checkpoint。下表中 R 表示运行目录 `$WORK_DIR/analysis/position/2026-10-20_digit_failure`；图文件位于 `docs/analysis/position/figures/digit_failure/`。GPU 阶段与 CPU 分析均由 `scripts/analysis/position/digit_failure.sh` 执行（GPU 阶段为 `STAGES=grid_gen,factorial,attn`，分析与作图为 `STAGES=analysis`）。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.2 节首位数字析因（804 个单元、6909 行）与一致性检查 | R/`factorial/units.json`、R/`factorial/rows.jsonl`、R/`features/factorial/shard_*.npz`（residual 与 DLA 分片）；R/`results.json` 的 `consistency` 字段 | `digit_failure.sh`（`factorial`） |
+| 第 2.2 节网格 greedy 答案与抽查 | R/`grid/gen.jsonl`、R/`grid/spotcheck.jsonl` | `digit_failure.sh`（`grid_gen`） |
+| 第 2.2 节 attention 重算 | R/`attn/attn.jsonl` | `digit_failure.sh`（`attn`） |
+| 主要结论 1、第 3.1 节理论表、图 1 theory.png | R/`results.json` 的 `theory` 字段（合成数据，不依赖模型激活） | `digit_failure.sh`（`analysis`） |
+| 主要结论 3、第 3.2 节、图 2 landscape.png | R/`results.json` 的 `landscape` 字段 | 同上 |
+| 主要结论 2、第 3.3 节方差分解表与图 3 variance.png | R/`results.json` 的 `variance` 字段 | 同上 |
+| 第 3.3 节 clamp 表与图 4 clamp.png | R/`results.json` 的 `clamp` 字段 | 同上 |
+| 主要结论 6、第 3.4 节分辨率表与图 5 evidence.png | R/`results.json` 的 `evidence` 字段 | 同上 |
+| 主要结论 4、第 3.5 节边界表与图 boundaries.png | R/`results.json` 的 `boundaries` 字段 | 同上 |
+| 第 3.5 节解码表与图 6b decoding.png | R/`results.json` 的 `decoding` 字段；R/`analysis.npz` | 同上 |
+| 主要结论 5、第 3.6 节网格表与图 8 grid.png | R/`results.json` 的 `grid` 字段；R/`grid/gen.jsonl` | 同上 |
+| 第 3.7 节图 7 dla.png | R/`results.json` 的 `dla` 字段 | 同上 |
+| 第 3.7 节图 9 attention.png | R/`results.json` 的 `attention` 字段；R/`attn/attn.jsonl` | 同上 |
+| 主要结论 7、第 3.8 节信息上界表与图 10 oracle.png | R/`results.json` 的 `oracle` 字段 | 同上 |
+| 图 0 inputs.png | R/`factorial/units.json` | 同上 |
+| 运行配置 | R/`experiment.json` | `digit_failure.sh` |
+
+### 代码与运行记录
 
 产物位于 WORK_DIR 的 `analysis/position/2026-10-20_digit_failure/`：`factorial/`（`units.json` 与 `rows.jsonl`，每行含两处数字分布）、`features`（链接到 DATA_DIR 的 residual 与 DLA 分片）、`grid/`（greedy 答案与 generate 抽查）、`attn/attn.jsonl`、`results.json`、`analysis.npz`、`experiment.json`（模型版本、代码摘要、token 预算与运行参数）。程序为 `analysis_tools/position/digit_failure*.py`（引擎、理论、GPU 阶段、CPU 分析与作图），入口为 `scripts/analysis/position/digit_failure.sh`，测试为 `tests/analysis/position/test_digit_failure.py`。

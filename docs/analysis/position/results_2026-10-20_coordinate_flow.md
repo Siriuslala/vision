@@ -258,15 +258,7 @@ bbox 的 x_max 与 y_max 很少改变首位数字（满足条件的数值只有 
 - 拼接对照的 run B 在 ViT 中不自洽（只有 $\mathcal{D}$ 来自移动后的图像），它测量的是 decoder 对这一输入的反应。
 - 行列 attention 不对称的来源以相容性论证给出，没有直接干预 DeltaNet 的行内传递。
 
-## 6. 运行与产物
-
-- 入口：`scripts/analysis/position/coordinate_flow.sh`（`STAGE=cases|gpu|analyze|figures`，参数集中在脚本顶部）。
-- 代码：`analysis_tools/position/coordinate_flow.py`（GPU 阶段 gen、spotcheck、heads、kv、flow、field）、`coordinate_flow_analysis.py`（CPU 分析，输出 `summary.json`）、`coordinate_flow_figures.py`（作图）；测试 `tests/analysis/position/test_coordinate_flow.py`。
-- 产物：`$WORK_DIR/analysis/position/2026-10-20_coordinate_flow/`，包括 `gen.jsonl`、`spotcheck.jsonl`、`heads.jsonl`、`kv.jsonl`、`kv_attn/`、`flow/`、`summary.json` 与运行日志。
-- 图：`docs/analysis/position/figures/coordinate_flow/`。
-- 计算量：在与其他任务共享的 A800 与 A40 上约 4.5 GPU 小时。
-
-### 图
+## 6. 图
 
 ![heads_single](figures/coordinate_flow/heads_single.png)
 
@@ -317,3 +309,34 @@ bbox 的 x_max 与 y_max 很少改变首位数字（满足条件的数值只有 
 ![field_t6g20_rowcol](figures/coordinate_flow/field_t6g20_rowcol.png)
 
 图 field_t6g10_point 与 field_t6g20_rowcol：site 16 留出折上解码的位置场，左两列为答对的图像，右两列为列号多计 1 的图像；上行为每个 visual token 解码的 x，下行为解码的 y。色标为 viridis，单位为 0–1000 坐标；红框为目标 token。
+
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验未训练模型，不涉及 checkpoint。下表中 R 表示运行目录 `$WORK_DIR/analysis/position/2026-10-20_coordinate_flow`，S 表示 2.5e 源运行目录 `$WORK_DIR/analysis/representation/2026-10-16_sees_right`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.2 节样本与回答、第 2.3 节数值检查 | R/`cases.json`、R/`gen.jsonl`、R/`spotcheck.jsonl`；汇总见 R/`summary.json` 的 `gen` 与 `spotcheck` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=cases`、`STAGE=gpu`） |
+| 主要结果 1、表 1（head 输出 patching 恢复比例） | R/`heads.jsonl`；R/`summary.json` 的 `q1_heads` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=gpu` 的 heads 阶段，`STAGE=analyze`） |
+| 主要结果 2、表 2（层 20 行列 attention 质量与第 0 列份额） | R/`summary.json` 的 `q1_rowcol_attention` 字段；原始 attention 取自 S/`readout/records.jsonl` 与 S/`readout/maps/` | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=analyze`）；源数据由 `scripts/analysis/representation/sees_right.sh` 生成 |
+| 主要结果 3、表 3（模型答案与 attention 解码命中率） | R/`summary.json` 的 `q2` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=analyze`） |
+| 主要结果 4、表 4（图像 KV 子集 patching） | R/`kv.jsonl`、R/`kv_attn/`；R/`summary.json` 的 `q3` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=gpu` 的 kv 阶段，`STAGE=analyze`） |
+| 主要结果 5、表 5（输出顺序） | R/`summary.json` 的 `q4` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=analyze`） |
+| 主要结果 6、表 6（分层段信息流） | R/`flow/*.npz`；R/`summary.json` 的 `q5` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=gpu` 的 flow 阶段，`STAGE=analyze`） |
+| 主要结果 7、表 7（位置场 AUROC） | R/`field/{disc_point,t6g10_point,t6g20_rowcol}.npz`；R/`summary.json` 的 `q6` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=gpu` 的 field 阶段，`STAGE=analyze`） |
+| 图 heads_single、heads_loo（`docs/analysis/position/figures/coordinate_flow/`） | R/`summary.json` 的 `q1_heads` 字段 | `scripts/analysis/position/coordinate_flow.sh`（`STAGE=figures`） |
+| 图 rowcol_profile | R/`summary.json` 的 `q1_rowcol_attention` 字段 | 同上 |
+| 图 aligned_attention | S/`cases.json`、S/`readout/records.jsonl`、S/`readout/maps/` | 同上 |
+| 图 attention_answer | R/`summary.json` 的 `q2` 字段 | 同上 |
+| 图 kv_groups、kv_rows_cols | R/`summary.json` 的 `q3` 字段；R/`kv.jsonl` | 同上 |
+| 图 order、layer_group_per_value、step_attention | R/`summary.json` 的 `q4` 字段 | 同上 |
+| 图 flow | R/`summary.json` 的 `q5` 字段 | 同上 |
+| 图 field_t6g10_point、field_t6g20_rowcol | R/`field/*.npz`、R/`summary.json`；S/`cases.json`、S/`gen.jsonl` | 同上 |
+
+### 代码与运行记录
+
+- 入口：`scripts/analysis/position/coordinate_flow.sh`（`STAGE=cases|gpu|analyze|figures`，参数集中在脚本顶部）。
+- 代码：`analysis_tools/position/coordinate_flow.py`（GPU 阶段 gen、spotcheck、heads、kv、flow、field）、`coordinate_flow_analysis.py`（CPU 分析，输出 `summary.json`）、`coordinate_flow_figures.py`（作图）；测试 `tests/analysis/position/test_coordinate_flow.py`。
+- 产物：`$WORK_DIR/analysis/position/2026-10-20_coordinate_flow/`，包括 `gen.jsonl`、`spotcheck.jsonl`、`heads.jsonl`、`kv.jsonl`、`kv_attn/`、`flow/`、`summary.json` 与运行日志。
+- 图：`docs/analysis/position/figures/coordinate_flow/`。
+- 计算量：在与其他任务共享的 A800 与 A40 上约 4.5 GPU 小时。

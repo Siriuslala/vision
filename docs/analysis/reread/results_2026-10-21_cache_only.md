@@ -313,10 +313,6 @@ ViT FLOPs 为每题均值，按 ViT 结构解析计算；KV cache 只计 8 个 g
 3. 计时在共享 GPU 上进行，绝对值偏慢；条件间比较依靠同题依次运行与逐题轮换顺序。
 4. 合成任务每个 48 题，单数据集对比在 Holm 校正后大多不显著，结论以四个自然数据集合计的比较为准。
 
-## 7. 产物
-
-产物位于 WORK_DIR 的 `analysis/reread/2026-10-21_cache_only/`：`verify/verify.json`（merger 复现与批量一致性），`lean_<bench>/` 与 `lean2_<bench>/`（`results.jsonl` 保存每个（题目, 条件）的调用文本、窗口、答案、评分、token 数、ViT 与 merger FLOPs），`native/<bench>/`（原生协议），`timing/` 与 `timing2/`（逐题分段计时、峰值显存、KV cache），`summary.json`（全部统计）。程序为 `analysis_tools/reread/cache_only.py`（缓存读法、merger 复用、FLOPs、闭合调用）、`cache_only_run.py`（运行、计时、核对）与 `cache_only_analysis.py`（统计与作图），入口为 `scripts/analysis/reread/cache_only.sh`，测试为 `tests/analysis/reread/test_cache_only.py`。
-
 ## 附录 A：需要额外 ViT 前向的参照条件
 
 | 条件 | TextVQA | GQA | MMVP | POPE | 合计 | 合成 T5 |
@@ -326,3 +322,23 @@ ViT FLOPs 为每题均值，按 ViT 结构解析计算；KV cache 只计 8 个 g
 
 full2x 把整图边长放大 2 倍作为唯一输入，真实应用中不会出现，只作为“提高整图 ViT 采样密度”的参照；h27 为实验 5.2 的 2 倍分辨率缓存。s27 − full2x 合计为 −0.054 [−0.078, −0.030]，s27 − h27 为 −0.023 [−0.039, −0.008]，h27 − crop2 为 −0.010 [−0.024, 0.003]。**两者都高于只读缓存，与第 3.3 节的结论一致：提升来自更密的 ViT 采样。** full2x 在 TextVQA 上最高（0.870），但其 ViT 计算为每题 3878 个 patch，合成 1280×1280 图像上整图 ViT 段为 1.66 s；在合成色差任务上 full2x 的 AUROC 降至 0.63，原因未做分析。
 
+
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录；文档用图保存在仓库的 `docs/analysis/reread/figures/cache_only/` 中。本实验不涉及训练，无 checkpoint。记 $R$ 为 `$WORK_DIR/analysis/reread/2026-10-21_cache_only`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.2 节与第 2.3 节示意图 merge_variants.png、position_ids.png；读法数值核对 | `$R/summary.json`（字段 verify）；`$R/verify/` | `scripts/analysis/reread/cache_only.sh`（STAGES=verify） |
+| 第 3.1 节各条件准确率表与图 accuracy_lean.png | `$R/summary.json`（字段 lean、lean_pooled_acc）；逐题回答：`$R/lean_<数据集>/results.jsonl` | `scripts/analysis/reread/cache_only.sh`（STAGES=lean_textvqa,lean_gqa,lean_mmvp,lean_pope） |
+| 第 3.1 节与第 3.2 节配对比较表；全部图的绘制 | `$R/summary.json`（字段 lean_pooled） | `scripts/analysis/reread/cache_only.sh`（STAGES=analysis） |
+| 第 3.3 节按窗口大小分组表与图 textvqa_window_size.png | `$R/summary.json`（字段 textvqa_window_size）；`$R/lean_textvqa/results.jsonl` | `scripts/analysis/reread/cache_only.sh`（STAGES=lean_textvqa） |
+| 第 3.4 节合成 T5 窗口表 | `$R/summary.json`（字段 lean.syn_loc）；`$R/lean_syn_loc/results.jsonl` | `scripts/analysis/reread/cache_only.sh`（STAGES=lean_syn_loc） |
+| 第 3.5 节开销表与图 timing_breakdown.png、cost_accuracy.png | `$R/summary.json`（字段 timing）；`$R/timing/` | `scripts/analysis/reread/cache_only.sh`（STAGES=timing） |
+| 第 3.6 节 lean2 与原生协议比较表、图 timing_breakdown_closed.png 与时间表 | `$R/summary.json`（字段 lean2、lean2_pooled、lean2_pooled_acc、native、timing2）；`$R/lean2_<数据集>/`、`$R/native/`、`$R/timing2/` | `scripts/analysis/reread/cache_only.sh`（STAGES=lean2_<数据集>,native_<数据集>,timing2） |
+| 第 3.7 节合成色差与缺口结果 | `$R/summary.json`（字段 lean.syn_color、lean.syn_gap）；`$R/lean_syn_color/`、`$R/lean_syn_gap/` | `scripts/analysis/reread/cache_only.sh`（STAGES=lean_syn_color,lean_syn_gap） |
+| 附录 A full2x 与 h27 参照条件 | `$R/summary.json`（字段 lean、lean_pooled_acc 中的 full2x、h27） | `scripts/analysis/reread/cache_only.sh`（CONDS=full2x h27） |
+
+### 代码与运行记录
+
+产物位于 `$WORK_DIR/analysis/reread/2026-10-21_cache_only/`：`verify/verify.json`（merger 复现与批量一致性），`lean_<bench>/` 与 `lean2_<bench>/`（`results.jsonl` 保存每个（题目, 条件）的调用文本、窗口、答案、评分、token 数、ViT 与 merger FLOPs），`native/<bench>/`（原生协议），`timing/` 与 `timing2/`（逐题分段计时、峰值显存、KV cache），`summary.json`（全部统计）。程序为 `analysis_tools/reread/cache_only.py`（缓存读法、merger 复用、FLOPs、闭合调用）、`cache_only_run.py`（运行、计时、核对）与 `cache_only_analysis.py`（统计与作图），入口为 `scripts/analysis/reread/cache_only.sh`，测试为 `tests/analysis/reread/test_cache_only.py`。

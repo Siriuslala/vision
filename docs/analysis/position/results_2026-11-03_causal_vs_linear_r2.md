@@ -293,10 +293,31 @@ point 格式给出相同的方向：横坐标的加权目标份额为 Qwen3.5 0.
 5. **行内广播的通路未分离。** 短卷积、行内状态与 full attention 层各自的贡献需要分别屏蔽，本轮未做。
 6. **只使用 10×10 网格与单目标圆。** 自然图像上没有可计数的行结构，结论不外推到 RefCOCO。
 
-## 8. 实际执行与产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验不训练模型，不涉及 checkpoint。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 1 节结论 1、2 与第 4.1 节表（Qwen3-VL DeepStack 开/关与 Qwen3.5 的拼接对照份额） | `$WORK_DIR/analysis/position/2026-10-21_causal_vs_linear/summary.json`（`kv.vl_ds_on`、`kv.vl_ds_off`、`kv.q35_none` 字段；Qwen3.5 的 3.11 数值在 `kv.q35_3.11` 字段，单目标圆对应 `disc_point` 键） | `scripts/analysis/position/causal_vs_linear.sh` |
+| 第 4.2 节表（DeltaNet 编辑下的答案与载体） | `$WORK_DIR/analysis/position/2026-10-21_causal_vs_linear/summary.json`（`gen.*` 与 `kv.q35_nowrite_target`、`kv.q35_freeze_l9_16`、`kv.q35_nodecay` 字段）；逐回答记录为同目录 `gen_<tag>.jsonl`、`kv_<tag>.jsonl` | `scripts/analysis/position/causal_vs_linear.sh` |
+| 第 1 节结论 3 中目标 ViT 位置移植的行跟随比（3.8 E9） | `$WORK_DIR/analysis/position/2026-10-15_sequence_order/results.json` | `scripts/analysis/position/sequence_order.sh` |
+| 第 1 节结论 4、5 与第 4.3 节（单 head 恢复比例、前 5 个读取 head 之和、全部 head 恢复比例、attention 份额） | `$WORK_DIR/analysis/position/2026-11-03_causal_vs_linear_r2/summary.json`（`models.<tag>.keys.<格式>\|<轴>` 下的 `full_all`、`reading_heads`、`sum_top_k`、`per_head_share`、`token_fraction` 字段） | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=analyze`） |
+| head 输出 patching 的逐回答 logit 差 | `$WORK_DIR/analysis/position/2026-11-03_causal_vs_linear_r2/heads_q35_none.jsonl`、`heads_vl_ds_on.jsonl` | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=heads`） |
+| 首位数字 query 处的逐 head 图像 attention | `$WORK_DIR/analysis/position/2026-11-03_causal_vs_linear_r2/maps_q35_none/`、`maps_vl_ds_on/` | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=heads`） |
+| 输入示例与 token 组图 | `docs/analysis/position/figures/causal_vs_linear/inputs_groups.png` | `scripts/analysis/position/causal_vs_linear.sh` |
+| 拼接对照示意图、累加器模拟图 | `docs/analysis/position/figures/causal_vs_linear_r2/splice_protocol.png`、`accumulators_sim.png`（示意与数值模拟，不读取模型激活） | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=analyze`） |
+| 图 4 读取 head 排名 | `docs/analysis/position/figures/causal_vs_linear_r2/head_ranking_t6g10_rowcol.png`（另有 `head_ranking_t6g10_point.png`）；数据为上述 `summary.json` | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=analyze`） |
+| attention 份额图 | `docs/analysis/position/figures/causal_vs_linear_r2/mass_groups.png`；数据为上述 `summary.json` 的 `token_fraction` | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=analyze`） |
+| 图 6 目标中心化 attention 图 | `docs/analysis/position/figures/causal_vs_linear_r2/centred_maps_t6g10_rowcol_top1.png`（另有 `weighted` 与 point 版本）；数据为 `maps_<tag>/` | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=analyze`） |
+| 图 7 attention 叠加示例 | `docs/analysis/position/figures/causal_vs_linear_r2/examples_t6g10_rowcol.png`；数据为 `maps_<tag>/` 与 `$WORK_DIR/analysis/position/2026-10-20_coordinate_flow/` 中的输入图像 | `scripts/analysis/position/causal_vs_linear_r2.sh`（`JOB=analyze`） |
+| 第 4.4 节受控小模型结果 | `$WORK_DIR/analysis/position/2026-10-21_causal_vs_linear/summary.json`（`toy` 字段）；训练记录在同目录 `toy/` | `scripts/analysis/position/causal_vs_linear.sh` |
+| 运行参数与模型版本 | `$WORK_DIR/analysis/position/2026-11-03_causal_vs_linear_r2/run_log.jsonl` | `scripts/analysis/position/causal_vs_linear_r2.sh` |
+
+### 代码与运行记录
 
 - **GPU 用量。** 一次运行约 0.5 GPU 小时（A800，经 claim 工具申请的空闲 GPU）：Qwen3.5 32 个回答约 12 分钟，Qwen3-VL 32 个回答约 17 分钟。Qwen3.5 使用 FLA kernel。
 - **代码。** `analysis_tools/position/causal_vs_linear_heads.py`（GPU：逐 head attention 图与 head 输出 patching，两种模型通用），`analysis_tools/position/causal_vs_linear_heads_analysis.py`（CPU：读取 head 选择、attention 份额、全部图与累加器模拟）；复用第一轮的 `causal_vs_linear.py` 与 `causal_vs_linear_run.py`，未修改共享模块。测试为 `tests/analysis/position/test_causal_vs_linear_r2.py`。
 - **运行入口。** `scripts/analysis/position/causal_vs_linear_r2.sh`，参数 `JOB` 取 heads 或 analyze。
-- **结果。** `WORK_DIR/analysis/position/2026-11-03_causal_vs_linear_r2/`：`heads_<tag>.jsonl`（逐回答的 head 输出 patching 的 logit 差），`maps_<tag>/`（逐回答的全部 full attention head 在首位数字 query 处的图像 attention，float16），`summary.json`（全部统计），`run_log.jsonl`（运行参数与模型版本）。
+- **结果。** `$WORK_DIR/analysis/position/2026-11-03_causal_vs_linear_r2/`：`heads_<tag>.jsonl`（逐回答的 head 输出 patching 的 logit 差），`maps_<tag>/`（逐回答的全部 full attention head 在首位数字 query 处的图像 attention，float16），`summary.json`（全部统计），`run_log.jsonl`（运行参数与模型版本）。
 - **图。** `docs/analysis/position/figures/causal_vs_linear_r2/`。

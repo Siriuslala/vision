@@ -316,11 +316,26 @@ DeepStack 在推理时的主要价值是位置编码，其次是粗尺度的布�
 2. 第 2.3 节末尾新增：“实验 4.5 表明，DeepStack 的注入内容在推理时以字形轮廓与布局的尺度参与文字识别，作用随模型增大而减弱，笔画级细节不被使用；Qwen3.5-9B 在自然图像细粒度识别上不弱于 Qwen3-VL-8B。”
 3. 第 8 节结果模式表新增一行：“4.5 中证据区域替换使识别下降、对照区域不变，且 Blur8 而非 Blur2 造成下降 | 注入内容以粗到中尺度在证据位置被读取，最细尺度不被使用 | 方向二补充细节时提供主路径未见的新像素，而非重复注入浅层特征”。
 
-## 9. 运行与产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录；文档用图仅保存在仓库的 `docs/analysis/deepstack/figures/natural/` 中。本实验不涉及训练，无 checkpoint。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 3.4 节样本表与输入示例图 inputs.png | 样本：`$WORK_DIR/analysis/deepstack/2026-10-21_natural/cases.jsonl`、`build.json`；输入图像：`images/`；Visual-CoT 抽取图像：`viscot_raw/` | `scripts/analysis/deepstack/deepstack_natural.sh`（COMMAND=build、analyze） |
+| 第 4 节 batch 一致性核对 | `$WORK_DIR/analysis/deepstack/2026-10-21_natural/checks/spotcheck.jsonl` | `scripts/analysis/deepstack/deepstack_natural.sh`（COMMAND=spotcheck） |
+| 第 5.1 节准确率表与图 accuracy_qwen3_vl_{8b,4b}.png | 数据：`$WORK_DIR/analysis/deepstack/2026-10-21_natural/analysis/summary.json`（字段 accuracy）、`analysis/tables.md`；原始回答与评分：`runs/<模型>/<条件>.jsonl`、`<条件>.scores.jsonl` | `scripts/analysis/deepstack/deepstack_natural.sh`（COMMAND=run、score、analyze） |
+| 第 5.1 节效应分解表与图 decomposition_qwen3_vl_{8b,4b}.png | `$WORK_DIR/analysis/deepstack/2026-10-21_natural/analysis/summary.json`（字段 contrasts；MMVP 成对评分见字段 mmvp_pairs） | `scripts/analysis/deepstack/deepstack_natural.sh`（COMMAND=analyze） |
+| 第 5.2 节空间尺度表（Full − Blur2、Blur2 − Blur8、Full − Blur8） | `$WORK_DIR/analysis/deepstack/2026-10-21_natural/analysis/summary.json`（字段 contrasts） | `scripts/analysis/deepstack/deepstack_natural.sh`（COMMAND=analyze） |
+| 第 5.3 节证据区域替换表与图 region_qwen3_vl_{4b,8b}.png | `$WORK_DIR/analysis/deepstack/2026-10-21_natural/analysis/summary.json`（字段 region，含 by_size）；`runs/<模型>/blank_in.*`、`blank_ctrl.*` | `scripts/analysis/deepstack/deepstack_natural.sh`（CONDITION=blank_in、blank_ctrl；COMMAND=run、analyze） |
+| 第 5.4 节 DocVQA 冲突计数表与图 doc_examples_qwen3_vl_8b.png | `$WORK_DIR/analysis/deepstack/2026-10-21_natural/runs/qwen3_vl_{8b,4b}/{full,off,meanpos,blank}.scores.jsonl`（逐条 correct 与 anls 字段） | `scripts/analysis/deepstack/deepstack_natural.sh`（COMMAND=score、analyze） |
+| 第 5.5 节模型比较表与图 models.png | `$WORK_DIR/analysis/deepstack/2026-10-21_natural/analysis/summary.json`（字段 accuracy.Qwen3.5-9B）；`runs/qwen35_9b/full.scores.jsonl` | `scripts/analysis/deepstack/deepstack_natural.sh`（MODEL=Qwen3.5-9B） |
+
+### 代码与运行记录
 
 运行入口为 scripts/analysis/deepstack/deepstack_natural.sh，参数集中在脚本顶部，COMMAND 选择步骤：build（样本选择、Visual-CoT 图像抽取、缩放与证据掩码）、run（指定模型与条件列表的批量回答，可续跑；SPLIT 参数允许把模型分到两张卡上）、score、analyze。代码位于 analysis_tools/deepstack/ 下的 deepstack_natural.py 与 deepstack_natural_analysis.py，测试位于 tests/analysis/deepstack/test_deepstack_natural.py。
 
-产物保存于 WORK_DIR 的 analysis/deepstack/2026-10-21_natural/：
+产物保存于 `$WORK_DIR/analysis/deepstack/2026-10-21_natural/`：
 
 - cases.jsonl、build.json：样本、prompt、缩放后的图像尺寸、证据框与对照区域的 token 索引；images/ 为缩放后的输入图像，viscot_raw/ 为从 Visual-CoT 归档中抽取的 CUB 与 DocVQA 原图；
 - runs/<模型>/<条件>.jsonl：原始回答、首 token 的 margin、teacher-forced 对数概率与 batch size，<条件>.scores.jsonl 为评分，<条件>.json 为运行配置；

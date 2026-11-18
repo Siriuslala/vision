@@ -297,14 +297,6 @@ $$
 - what 配对只存在于 RefCOCO 与 PACO（182 对）；配对实验只替换答案位置的组件，提示词阶段的读取没有被干预。
 - 全部测量使用模型自己的答案做 teacher forcing，attention 在首位数字之前的位置测量；批量生成与逐条生成在非首位数字上有 1–18 个单位的差异（第 3.2 节）。
 
-## 7. 运行与产物
-
-- 入口：`scripts/analysis/position/edge_heads.sh`（`STAGE=cases|gpu|analyze|figures`，参数集中在脚本顶部；gpu 阶段通过共享的 GPU 申请脚本获得空闲 GPU，结束或失败时释放）。
-- 代码：`analysis_tools/position/edge_heads.py`（物体选择与 GPU 阶段 gen、spotcheck、means、ablate、path）、`edge_heads_analysis.py`（CPU 分析，输出 `summary.json` 与 `arrays.npz`）、`edge_heads_figures.py`（作图）；测试 `tests/analysis/position/test_edge_heads.py`。
-- 产物：`$WORK_DIR/analysis/position/2026-11-03_edge_heads/`，包括 `cases.json`、`images/`（图像、掩码与部位标签图）、`gen.jsonl`、`attn/`、`spotcheck.jsonl`、`means.npz`、`ablate.jsonl`、`path.jsonl`、`path_attn/`、`summary.json`、`arrays.npz` 与运行日志。
-- 数据：COCO train2017 图像、PACO-LVIS、Pascal-Part（VOC2010）与 COCO-Stuff 均取自 `$DATA_DIR_PUBLIC` 下的本地副本；RefCOCO 样本沿用 3.11 第二轮。
-- 计算量：一块空闲 A40 约 2.6 GPU 小时（gen 约 65 分钟，ablate 约 70 分钟，means 与 path 约 15 分钟）。
-
 ## 图
 
 ![density_edge_heads](figures/edge_heads/density_edge_heads.png)
@@ -367,3 +359,30 @@ $$
 ![gallery_other](figures/edge_heads/gallery_other.png)
 
 图 gallery_*：每个类别按面积从小到大等间隔选取 6 个例子（标题括号内为物体面积占图像的比例）。每行第一列为原图与目标框（黄色）；其余六列依次为 L20 H11 写点 x 时、写点 y 时，右下组 6 个 head 平均 attention 写点 x 时、写点 y 时，左上组 5 个 head 平均 attention 写点 x 时、写点 y 时的图像 attention（由模型 attention 计算，按每个面板自身的最大值归一化，viridis 色标且低值透明，色条单位为“占该面板最大值的比例”）。底图为调暗的原图，白框为目标框，粉色线为分割掩码轮廓（有掩码时），红色叉为 attention 峰值（3×3 邻域加权中心）。
+
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验不训练模型，不涉及 checkpoint。下表中 `<run>` 指 `$WORK_DIR/analysis/position/2026-11-03_edge_heads`，图均位于 `docs/analysis/position/figures/edge_heads/`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 表 1 数据来源与图像统计 | `<run>/cases.json`、`<run>/cases_summary.json`；图像、掩码与部位标签图在 `<run>/images/` | `scripts/analysis/position/edge_heads.sh`（`STAGE=cases`） |
+| 生成的坐标答案与逐步 attention | `<run>/gen.jsonl`、`<run>/attn/`、`<run>/spotcheck.jsonl` | `scripts/analysis/position/edge_heads.sh`（`STAGE=gpu`，gen 与 spotcheck） |
+| 第 1 节结论 1、表 2 峰值落点；图 density_edge_heads、bands | `<run>/summary.json`（`bands`、`bands_all`、`density_sets`、`density_n` 字段）、`<run>/arrays.npz`；图 `density_edge_heads.png`、`bands.png` | `scripts/analysis/position/edge_heads.sh`（`STAGE=analyze` 与 `STAGE=figures`） |
+| 第 1 节结论 2、表 3 边缘回归计数；图 regression_steps、regression_all | `<run>/summary.json`（`regression_n`、`beta_key`、`r2_key`、`beta_ci`、`edge_min`、`edge_max` 字段）；图 `regression_steps.png`、`regression_all.png` | 同上 |
+| 第 1 节结论 3 极值点相关；图 extreme_points | `<run>/summary.json`（`extreme` 字段）；图 `extreme_points.png` | 同上 |
+| 第 1 节结论 4 跨类别稳定性；图 stability | `<run>/summary.json`（`stability` 字段）；图 `stability.png` | 同上 |
+| 第 1 节结论 5、表 4 第一列 attention 份额 | `<run>/summary.json`（`row_start` 字段） | 同上 |
+| 第 1 节结论 6、表 5 L20 H11 峰值位置与部位富集；图 salient_uv、parts_20_11、parts_20_10、density_h11_groups、gallery_* | `<run>/summary.json`（`salient`、`parts`、`parts_family` 字段）；图 `salient_uv.png`、`parts_20_11.png`、`parts_20_10.png`、`density_h11_groups.png`、`gallery_<类别>.png` | 同上 |
+| 第 1 节结论 7、表 6 what 配对组件替换；图 path | `<run>/path.jsonl`、`<run>/path_attn/`、`<run>/summary.json`（`path`、`path_ablation_shift` 字段）；图 `path.png` | `scripts/analysis/position/edge_heads.sh`（`STAGE=gpu` 的 path 阶段，随后 `STAGE=analyze`） |
+| 表 7 均值消融后的点命中率；图 ablate | `<run>/ablate.jsonl`、`<run>/means.npz`（head 平均输出）、`<run>/summary.json`（`ablate` 字段）；图 `ablate.png` | `scripts/analysis/position/edge_heads.sh`（`STAGE=gpu` 的 means 与 ablate 阶段，随后 `STAGE=analyze`） |
+| RefCOCO 样本来源（3.11 第二轮） | `$WORK_DIR/analysis/position/2026-10-21_coordinate_flow_natural/` | `scripts/analysis/position/coordinate_flow_natural.sh` |
+| 运行参数与日志 | `<run>/run_log.jsonl`、`<run>/gpu_run.log` | `scripts/analysis/position/edge_heads.sh` |
+
+### 代码与运行记录
+
+- 入口：`scripts/analysis/position/edge_heads.sh`（`STAGE=cases|gpu|analyze|figures`，参数集中在脚本顶部；gpu 阶段通过共享的 GPU 申请脚本获得空闲 GPU，结束或失败时释放）。
+- 代码：`analysis_tools/position/edge_heads.py`（物体选择与 GPU 阶段 gen、spotcheck、means、ablate、path）、`edge_heads_analysis.py`（CPU 分析，输出 `summary.json` 与 `arrays.npz`）、`edge_heads_figures.py`（作图）；测试 `tests/analysis/position/test_edge_heads.py`。
+- 产物：`$WORK_DIR/analysis/position/2026-11-03_edge_heads/`，包括 `cases.json`、`images/`（图像、掩码与部位标签图）、`gen.jsonl`、`attn/`、`spotcheck.jsonl`、`means.npz`、`ablate.jsonl`、`path.jsonl`、`path_attn/`、`summary.json`、`arrays.npz` 与运行日志。
+- 数据：COCO train2017 图像、PACO-LVIS、Pascal-Part（VOC2010）与 COCO-Stuff 均取自 `$DATA_DIR_PUBLIC` 下的本地副本；RefCOCO 样本沿用 3.11 第二轮。
+- 计算量：一块空闲 A40 约 2.6 GPU 小时（gen 约 65 分钟，ablate 约 70 分钟，means 与 path 约 15 分钟）。

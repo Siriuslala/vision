@@ -252,7 +252,24 @@ $$
 1. **正向化的缺失信号。** 第 3.3 节表明缺失目标在单个出现检测器上形成一个可线性读出的“暗洞”，只是读出偏好正向离群。一个通用的检验是在 ViT 输出或 merger 前对每个通道计算相对图像均值的偏差并同时保留其正负两部分（例如拼接 $x-\bar{x}$ 的正部与负部），观察缺失目标的可读性是否改善；该改动不针对特定任务，可在多类任务上评估。
 2. **full attention 第 4、8 层的头级定位。** 在这两层逐头消融目标 token 的读取，确定承担“与之前实体比较”的头，并检验它们是否与 3.10 的行计数电路共享。
 
-## 8. 运行与产物
+## 实验产物
+
+本节列出正文中主要数值、表格、图与 checkpoint 所对应的实验产物。路径均相对于 `$WORK_DIR`，生成脚本路径相对于仓库根目录。本实验不涉及训练，无 checkpoint。下表中的 SA 目录指 `$WORK_DIR/analysis/representation/2026-10-21_search_asymmetry`，全部条目由 `scripts/analysis/representation/search_asymmetry.sh` 生成，图由 STAGE=analyze 写入 `docs/analysis/representation/figures/search_asymmetry/`。
+
+| 正文条目 | 产物路径 | 生成脚本 |
+|---|---|---|
+| 第 2.1 节输入示例（`examples.png`） | SA 目录下 `items.jsonl`、`images/`、`build_config.json` | `search_asymmetry.sh`（STAGE=build） |
+| 第 2.2 节规模、耗时与一致性检查 | SA 目录下 `run_*.json`、`spotcheck.json`、`log_*.txt` | `search_asymmetry.sh`（各 STAGE） |
+| 主要结果 1、第 3.1 节不对称图谱表与 `atlas.png` | SA 目录下 `results_behave.jsonl`；`summary.json` 的 `behaviour.table`、`behaviour.tests` 字段；异常实体条件引用 `$WORK_DIR/analysis/representation/2026-10-20_odd_entity/results_behave.jsonl` | `search_asymmetry.sh`（STAGE=behave，analyze） |
+| 主要结果 2、第 3.2 节实体数量表与 `setsize.png` | `results_behave.jsonl`；`summary.json` 的 `behaviour.table` 字段 | `search_asymmetry.sh`（STAGE=behave，analyze） |
+| 主要结果 3、第 3.3 节选择性神经元表，`onoff.png`、`neurons.png` | SA 目录下 `capture/*.npz`（ViT MLP 激活）、`neurons.json`；`summary.json` 的 `neurons`、`salience` 字段 | `search_asymmetry.sh`（STAGE=capture，select，analyze） |
+| 第 3.3 节局部突出度表，`popout.png`、`maps.png` | `capture/*.npz`；`summary.json` 的 `popout` 字段 | `search_asymmetry.sh`（STAGE=capture，analyze） |
+| 主要结果 4、第 3.4 节神经元编辑表与 `edits_k256.png`（第一轮为 `edits.png`） | SA 目录下 `neurons_k256.json`、`edit_k256.jsonl`（第一轮为 `neurons.json`、`edit.jsonl`）；`summary.json` 的 `edits_k256`、`edits` 字段 | `search_asymmetry.sh`（STAGE=select，edit；TOP_K=256，EDIT_TAG=_k256） |
+| 主要结果 5、6，第 3.5 节序列混合子层替换表与 `mixer_patching.png` | SA 目录下 `mech.jsonl`；`summary.json` 的 `mech` 字段 | `search_asymmetry.sh`（STAGE=mech，analyze） |
+| 第 3.6 节门控编辑表与 `gates.png` | `mech.jsonl`（门控编辑条件）；`summary.json` 的 `mech` 字段 | `search_asymmetry.sh`（STAGE=mech，analyze） |
+| 第 3.6 节 attention 边与 `attention.png` | SA 目录下 `attn.jsonl`；`summary.json` 的 `attention` 字段 | `search_asymmetry.sh`（STAGE=mech，analyze） |
+
+### 代码与运行记录
 
 - 入口：`scripts/analysis/representation/search_asymmetry.sh`（阶段 build、behave、spotcheck、capture、select、edit、mech、analyze；第二轮编辑在脚本顶部设置 `TOP_K=256`、`EDIT_BLOCKS="3 6 9 12 15 18"`、`EDIT_TAG="_k256"`）。
 - 代码：`analysis_tools/representation/search_asymmetry.py`、`search_asymmetry_run.py`、`search_asymmetry_analysis.py`；测试为 `tests/analysis/representation/test_search_asymmetry.py`。
